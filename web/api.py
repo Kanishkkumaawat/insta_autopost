@@ -473,17 +473,20 @@ async def upload_files(
             # Upload to Cloudinary if configured, otherwise use local server
             if use_cloudinary:
                 # Upload to Cloudinary
+                print(f"DEBUG: Attempting to upload to Cloudinary...")
                 cloudinary_url = upload_to_cloudinary(file_path, public_id=f"instaforge/{unique_filename}")
                 
                 if cloudinary_url:
-                    print(f"DEBUG: Uploaded to Cloudinary: {cloudinary_url}")
+                    print(f"DEBUG: Successfully uploaded to Cloudinary: {cloudinary_url}")
                     file_url = cloudinary_url
                 else:
                     # Fallback to local server if Cloudinary upload fails
-                    print(f"DEBUG: Cloudinary upload failed, falling back to local server")
-                    from .cloudflare_helper import get_base_url, get_cloudflare_url
-                    base_url = get_base_url(str(request.base_url))
-                    file_url = f"{base_url}/uploads/{unique_filename}"
+                    print(f"ERROR: Cloudinary upload failed! Check the error messages above.")
+                    print(f"ERROR: Falling back to local server (Instagram will likely reject this)")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Cloudinary upload failed. Please check:\n1) Your Cloudinary credentials are correct\n2) You have internet connection\n3) Cloudinary service is available\n\nCheck server logs for detailed error messages."
+                    )
             else:
                 # Use Cloudflare tunnel URL if available, otherwise use request base URL
                 from .cloudflare_helper import get_base_url, get_cloudflare_url

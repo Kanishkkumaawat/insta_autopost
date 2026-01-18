@@ -69,6 +69,8 @@ def upload_to_cloudinary(file_path: Path, public_id: Optional[str] = None) -> Op
             resource_type = "video"
         
         # Upload to Cloudinary
+        print(f"DEBUG: Uploading to Cloudinary: {file_path}, resource_type={resource_type}, public_id={public_id}")
+        
         result = cloudinary.uploader.upload(
             str(file_path),
             resource_type=resource_type,
@@ -80,10 +82,13 @@ def upload_to_cloudinary(file_path: Path, public_id: Optional[str] = None) -> Op
         
         # Return the secure HTTPS URL
         url = result.get("secure_url") or result.get("url")
+        print(f"DEBUG: Cloudinary upload successful: {url}")
         return url
         
     except Exception as e:
-        print(f"Error uploading to Cloudinary: {e}")
+        import traceback
+        print(f"ERROR: Failed to upload to Cloudinary: {e}")
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
         return None
 
 def is_cloudinary_configured() -> bool:
