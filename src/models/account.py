@@ -1,0 +1,42 @@
+"""Account data models"""
+
+from typing import List, Optional
+from pydantic import BaseModel, Field
+
+
+class ProxyConfig(BaseModel):
+    """Proxy configuration for an account"""
+    enabled: bool = False
+    host: Optional[str] = None
+    port: Optional[int] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    
+    @property
+    def proxy_url(self) -> Optional[str]:
+        """Generate proxy URL if enabled"""
+        if not self.enabled or not self.host or not self.port:
+            return None
+        
+        if self.username and self.password:
+            return f"http://{self.username}:{self.password}@{self.host}:{self.port}"
+        return f"http://{self.host}:{self.port}"
+
+
+class WarmingConfig(BaseModel):
+    """Warming up behavior configuration"""
+    enabled: bool = True
+    daily_actions: int = Field(default=10, ge=0, le=100)
+    action_types: List[str] = Field(default_factory=lambda: ["like", "comment"])
+
+
+class Account(BaseModel):
+    """Instagram account model"""
+    account_id: str
+    username: str
+    access_token: str
+    proxy: ProxyConfig = Field(default_factory=ProxyConfig)
+    warming: WarmingConfig = Field(default_factory=WarmingConfig)
+    
+    class Config:
+        frozen = True  # Immutable for thread safety
