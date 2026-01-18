@@ -48,3 +48,6 @@ Thumbs.db
 # Project specific
 config/accounts.yaml.local
 *.pyc
+
+# Uploads (user-uploaded media files)
+uploads/
