@@ -1,141 +1,52 @@
-/** Logs viewer page JavaScript logic */
-
-let autoRefreshInterval = null;
-
-document.addEventListener('DOMContentLoaded', async () => {
-    // Load initial logs
-    await loadLogs();
-    
-    // Auto-refresh checkbox
-    const autoRefreshCheckbox = document.getElementById('autoRefresh');
-    if (autoRefreshCheckbox) {
-        autoRefreshCheckbox.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                startAutoRefresh();
-            } else {
-                stopAutoRefresh();
-            }
-        });
-        
-        if (autoRefreshCheckbox.checked) {
-            startAutoRefresh();
-        }
-    }
-    
-    // Manual refresh button
-    const refreshBtn = document.getElementById('refreshLogsBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
-            loadLogs();
-        });
-    }
-    
-    // Level filter
-    const levelSelect = document.getElementById('logLevel');
-    if (levelSelect) {
-        levelSelect.addEventListener('change', () => {
-            loadLogs();
-        });
-    }
+document.addEventListener('DOMContentLoaded', () => {
+    loadLogs();
+    // Auto-refresh every 10 seconds
+    setInterval(loadLogs, 10000);
 });
 
 async function loadLogs() {
-    const container = document.getElementById('logsContainer');
-    const loadingIndicator = document.getElementById('loadingIndicator');
+    const tbody = document.getElementById('logs-body');
+    const level = document.getElementById('log-level').value;
     
-    if (!container) return;
-    
-    if (loadingIndicator) loadingIndicator.style.display = 'block';
+    // Don't clear content if auto-refreshing, just update
+    // But if manual refresh (via button calling this), we might want to show loading state? 
+    // For now, let's just replace content silently.
     
     try {
-        const level = document.getElementById('logLevel')?.value || null;
-        const params = new URLSearchParams({ lines: '100' });
-        if (level) params.append('level', level);
+        const url = level ? `/api/logs?level=${level}` : '/api/logs';
+        const response = await fetch(url);
+        const data = await response.json();
         
-        const response = await apiRequest(`/logs?${params}`);
-        
-        if (!response) {
-            container.innerHTML = '<p class="empty-state">No logs available</p>';
+        if (!data.logs || data.logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-muted" style="padding: 1rem;">No logs found.</td></tr>';
             return;
         }
-        
-        if (response.logs && response.logs.length > 0) {
-            displayLogs(response.logs);
-        } else {
-            container.innerHTML = '<p class="empty-state">No logs found</p>';
-        }
+
+        tbody.innerHTML = data.logs.map(log => {
+            let badgeStyle = '';
+            if (log.level === 'WARNING') badgeStyle = 'background: #FEF3C7; color: #92400E;';
+            if (log.level === 'ERROR') badgeStyle = 'background: #FEE2E2; color: #991B1B;';
+            if (log.level === 'INFO') badgeStyle = 'background: #DBEAFE; color: #1E40AF;';
+            
+            let message = log.message;
+            if (log.data && Object.keys(log.data).length > 0) {
+                // Pretty print specific fields if needed, or just JSON
+                message += `<br><span class="text-muted text-sm" style="font-size: 0.8rem;">${JSON.stringify(log.data)}</span>`;
+            }
+
+            return `
+            <tr class="log-row">
+                <td class="text-sm font-mono" style="white-space: nowrap;">${new Date(log.timestamp).toLocaleTimeString()}</td>
+                <td><span class="badge" style="${badgeStyle}">${log.level}</span></td>
+                <td class="font-mono text-sm" style="word-break: break-all;">${message}</td>
+            </tr>
+        `}).join('');
+
     } catch (error) {
         console.error('Failed to load logs:', error);
-        container.innerHTML = `<p class="error-message">Error loading logs: ${error.message}</p>`;
-    } finally {
-        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        // Only show error if table is empty
+        if (tbody.children.length <= 1) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-error" style="padding: 1rem;">Failed to load logs.</td></tr>';
+        }
     }
 }
-
-function displayLogs(logs) {
-    const container = document.getElementById('logsContainer');
-    if (!container) return;
-    
-    const logTable = document.createElement('table');
-    logTable.className = 'logs-table';
-    
-    // Header
-    const header = document.createElement('thead');
-    header.innerHTML = `
-        <tr>
-            <th>Timestamp</th>
-            <th>Level</th>
-            <th>Event</th>
-            <th>Message</th>
-        </tr>
-    `;
-    logTable.appendChild(header);
-    
-    // Body
-    const body = document.createElement('tbody');
-    logs.forEach(log => {
-        const row = document.createElement('tr');
-        row.className = `log-entry log-${log.level.toLowerCase()}`;
-        
-        const timestamp = formatDate(log.timestamp);
-        const levelClass = `log-level log-level-${log.level.toLowerCase()}`;
-        
-        row.innerHTML = `
-            <td class="log-timestamp">${timestamp}</td>
-            <td><span class="${levelClass}">${log.level}</span></td>
-            <td class="log-event">${escapeHtml(log.event)}</td>
-            <td class="log-message">${escapeHtml(log.message || '')}</td>
-        `;
-        
-        body.appendChild(row);
-    });
-    
-    logTable.appendChild(body);
-    container.innerHTML = '';
-    container.appendChild(logTable);
-}
-
-function startAutoRefresh() {
-    stopAutoRefresh(); // Clear any existing interval
-    autoRefreshInterval = setInterval(() => {
-        loadLogs();
-    }, 5000); // Refresh every 5 seconds
-}
-
-function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
-    }
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    stopAutoRefresh();
-});

@@ -1,743 +1,273 @@
-/** Posting page JavaScript logic */
-
-let accounts = [];
 let uploadedFiles = [];
-let uploadedFileUrls = []; // Store URLs after upload
+let selectedAccounts = [];
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // Load accounts
-    accounts = await loadAccounts();
-    const accountSelect = document.getElementById('account_id');
-    if (accountSelect && accounts.length > 0) {
-        accountSelect.innerHTML = accounts.map(acc => 
-            `<option value="${acc.account_id}">${acc.username}</option>`
-        ).join('');
-        if (accounts.length === 1) {
-            accountSelect.value = accounts[0].account_id;
-        }
-    }
-    
-    // Media source toggle
-    const mediaSourceInputs = document.querySelectorAll('input[name="media_source"]');
-    mediaSourceInputs.forEach(input => {
-        input.addEventListener('change', handleMediaSourceChange);
-    });
-    
-    // Media type change handler
-    const mediaTypeInputs = document.querySelectorAll('input[name="media_type"]');
-    mediaTypeInputs.forEach(input => {
-        input.addEventListener('change', handleMediaTypeChange);
-    });
-    
-    // Caption character counter
-    const captionInput = document.getElementById('caption');
-    const charCount = document.getElementById('charCount');
-    if (captionInput && charCount) {
-        captionInput.addEventListener('input', () => {
-            charCount.textContent = captionInput.value.length;
-        });
-    }
-    
-    // File input handler
-    const fileInput = document.getElementById('fileInput');
-    if (fileInput) {
-        fileInput.addEventListener('change', handleFileSelect);
-    }
-    
-    // Drag and drop handlers
-    const dropZone = document.getElementById('dropZone');
-    if (dropZone) {
-        dropZone.addEventListener('dragover', handleDragOver);
-        dropZone.addEventListener('dragleave', handleDragLeave);
-        dropZone.addEventListener('drop', handleDrop);
-        dropZone.addEventListener('click', () => fileInput?.click());
-    }
-    
-    // Add more files button
-    const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
-    if (addMoreFilesBtn) {
-        addMoreFilesBtn.addEventListener('click', () => fileInput?.click());
-    }
-    
-    // Add media button (for URL input)
-    const addMediaBtn = document.getElementById('addMediaBtn');
-    if (addMediaBtn) {
-        addMediaBtn.addEventListener('click', addMediaUrlInput);
-    }
-    
-    // Form submit handler
-    const postForm = document.getElementById('postForm');
-    if (postForm) {
-        postForm.addEventListener('submit', handleFormSubmit);
-    }
-    
-    // DM file type toggle
-    const dmFileTypeInputs = document.querySelectorAll('input[name="dm_file_type"]');
-    dmFileTypeInputs.forEach(input => {
-        input.addEventListener('change', handleDmFileTypeChange);
-    });
-    
-    // DM trigger mode toggle
-    const dmTriggerModeInputs = document.querySelectorAll('input[name="dm_trigger_mode"]');
-    dmTriggerModeInputs.forEach(input => {
-        input.addEventListener('change', handleDmTriggerModeChange);
-    });
-    
-    // DM file input handler
-    const dmFileInput = document.getElementById('dmFileInput');
-    if (dmFileInput) {
-        dmFileInput.addEventListener('change', handleDmFileSelect);
-    }
-    
-    // Initial setup
-    handleMediaSourceChange();
-    handleMediaTypeChange();
-    handleDmFileTypeChange();
-    handleDmTriggerModeChange();
-    
-    // Ensure hidden URL inputs never have required attribute
-    // This is a safety measure to prevent browser validation errors
-    const urlSection = document.getElementById('urlSection');
-    if (urlSection && urlSection.style.display === 'none') {
-        const urlInputs = document.querySelectorAll('input[name="media_urls[]"]');
-        urlInputs.forEach(input => {
-            input.removeAttribute('required');
-            input.required = false;
-        });
-    }
+document.addEventListener('DOMContentLoaded', () => {
+    loadAccounts();
+    setupFileUpload();
+    setupCaptionCounters();
 });
 
-let dmFileData = null; // Store uploaded DM file
-
-function handleDmFileTypeChange() {
-    const dmFileType = document.querySelector('input[name="dm_file_type"]:checked')?.value;
-    const uploadSection = document.getElementById('dmFileUploadSection');
-    const urlSection = document.getElementById('dmFileUrlSection');
-    
-    if (dmFileType === 'upload') {
-        if (uploadSection) uploadSection.style.display = 'block';
-        if (urlSection) urlSection.style.display = 'none';
-    } else {
-        if (uploadSection) uploadSection.style.display = 'none';
-        if (urlSection) urlSection.style.display = 'block';
-        dmFileData = null; // Clear uploaded file when switching to URL
-    }
-}
-
-function handleDmTriggerModeChange() {
-    const triggerMode = document.querySelector('input[name="dm_trigger_mode"]:checked')?.value;
-    const keywordSection = document.getElementById('dmKeywordSection');
-    
-    if (triggerMode === 'KEYWORD') {
-        if (keywordSection) keywordSection.style.display = 'block';
-    } else {
-        if (keywordSection) keywordSection.style.display = 'none';
-    }
-}
-
-function handleDmFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-        alert('Please select a PDF file');
-        e.target.value = '';
-        return;
-    }
-    
-    dmFileData = file;
-    
-    // Show preview
-    const preview = document.getElementById('dmFilePreview');
-    const fileName = document.getElementById('dmFileName');
-    if (preview && fileName) {
-        fileName.textContent = file.name;
-        preview.style.display = 'block';
-    }
-}
-
-function clearDmFile() {
-    dmFileData = null;
-    const dmFileInput = document.getElementById('dmFileInput');
-    if (dmFileInput) dmFileInput.value = '';
-    
-    const preview = document.getElementById('dmFilePreview');
-    if (preview) preview.style.display = 'none';
-}
-
-function handleMediaSourceChange() {
-    const mediaSource = document.querySelector('input[name="media_source"]:checked')?.value;
-    const uploadSection = document.getElementById('uploadSection');
-    const urlSection = document.getElementById('urlSection');
-    const urlInputs = document.querySelectorAll('input[name="media_urls[]"]');
-    
-    if (mediaSource === 'upload') {
-        if (uploadSection) uploadSection.style.display = 'block';
-        if (urlSection) urlSection.style.display = 'none';
-        // Remove required attribute from ALL URL inputs when section is hidden
-        // This is critical to prevent browser validation errors
-        urlInputs.forEach(input => {
-            input.removeAttribute('required');
-            input.required = false;
-            // Also set the input to not be required via setAttribute for maximum compatibility
-            input.setAttribute('data-was-required', 'false');
-        });
-    } else {
-        if (uploadSection) uploadSection.style.display = 'none';
-        if (urlSection) urlSection.style.display = 'block';
-        // Only set required on first input when section is visible
-        const firstUrlInput = document.querySelector('input[name="media_urls[]"]');
-        if (firstUrlInput) {
-            firstUrlInput.setAttribute('required', 'required');
-            firstUrlInput.required = true;
-        }
-        // Remove required from additional inputs (carousel will handle this)
-        urlInputs.forEach((input, index) => {
-            if (index > 0) {
-                input.removeAttribute('required');
-                input.required = false;
-            }
-        });
-    }
-}
-
-function handleMediaTypeChange() {
-    const mediaType = document.querySelector('input[name="media_type"]:checked')?.value;
-    const addMediaBtn = document.getElementById('addMediaBtn');
-    const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
-    
-    // Carousel requires 2+ files - show/hide Add More Files button
-    if (mediaType === 'carousel') {
-        if (addMoreFilesBtn) {
-            addMoreFilesBtn.style.display = 'inline-block';
-        }
-    } else {
-        // For single media types, hide "Add More Files" initially
-        // (but show if user already has multiple files)
-        if (uploadedFiles.length <= 1 && addMoreFilesBtn) {
-            addMoreFilesBtn.style.display = 'none';
-        }
-    }
-    
-    // Validate carousel has enough files
-    if (mediaType === 'carousel' && uploadedFiles.length === 1) {
-        const statusDiv = document.getElementById('postStatus');
-        if (statusDiv) {
-            showStatus('postStatus', '⚠️ Carousel requires 2-10 files. You have 1 file. Please add more files or select "Image"/"Video" instead.', 'warning');
-        }
-    }
-    const mediaUrlsContainer = document.getElementById('mediaUrlsContainer');
-    
-    // For URL inputs
-    if (mediaUrlsContainer) {
-        const existingInputs = mediaUrlsContainer.querySelectorAll('input[type="url"]');
-        const urlSection = document.getElementById('urlSection');
-        const isUrlSectionVisible = urlSection && 
-            urlSection.style.display !== 'none' && 
-            window.getComputedStyle(urlSection).display !== 'none';
-        
-        if (existingInputs.length > 1) {
-            for (let i = 1; i < existingInputs.length; i++) {
-                existingInputs[i].remove();
-            }
-        }
-        
-        if (mediaType === 'carousel') {
-            if (addMediaBtn) addMediaBtn.style.display = 'block';
-            if (existingInputs.length === 1) {
-                addMediaUrlInput();
-            }
-        } else {
-            if (addMediaBtn) addMediaBtn.style.display = 'none';
-        }
-        
-        const firstInput = mediaUrlsContainer.querySelector('input[type="url"]');
-        if (firstInput) {
-            if (mediaType === 'reels') {
-                firstInput.placeholder = 'https://example.com/video.mp4 (Video URL for Reels)';
-            } else if (mediaType === 'video') {
-                firstInput.placeholder = 'https://example.com/video.mp4 (Video URL)';
-            } else {
-                firstInput.placeholder = 'https://example.com/image.jpg (Image URL)';
-            }
-            
-            // ALWAYS check visibility and update required attribute accordingly
-            // Remove required if section is hidden to prevent browser validation errors
-            if (isUrlSectionVisible) {
-                firstInput.setAttribute('required', 'required');
-                firstInput.required = true;
-            } else {
-                firstInput.removeAttribute('required');
-                firstInput.required = false;
-            }
-        }
-        
-        // Also ensure all URL inputs (including dynamically added ones) respect visibility
-        const allUrlInputs = mediaUrlsContainer.querySelectorAll('input[type="url"]');
-        if (!isUrlSectionVisible) {
-            allUrlInputs.forEach(input => {
-                input.removeAttribute('required');
-                input.required = false;
-            });
-        }
-    }
-    
-    // For file uploads
-    if (mediaType === 'carousel') {
-        if (addMoreFilesBtn) addMoreFilesBtn.style.display = 'block';
-    } else {
-        if (addMoreFilesBtn) addMoreFilesBtn.style.display = 'none';
-    }
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const dropZone = document.getElementById('dropZone');
-    if (dropZone) dropZone.classList.add('drag-over');
-}
-
-function handleDragLeave(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const dropZone = document.getElementById('dropZone');
-    if (dropZone) dropZone.classList.remove('drag-over');
-}
-
-function handleDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const dropZone = document.getElementById('dropZone');
-    if (dropZone) dropZone.classList.remove('drag-over');
-    
-    const files = Array.from(e.dataTransfer.files);
-    processFiles(files);
-}
-
-function handleFileSelect(e) {
-    const files = Array.from(e.target.files);
-    processFiles(files);
-    e.target.value = ''; // Reset input to allow selecting same file again
-}
-
-function processFiles(files) {
-    const validFiles = files.filter(file => {
-        const isImage = file.type.startsWith('image/');
-        const isVideo = file.type.startsWith('video/');
-        return isImage || isVideo;
-    });
-    
-    if (validFiles.length === 0) {
-        alert('Please select image or video files only.');
-        return;
-    }
-    
-    validFiles.forEach(file => {
-        if (!uploadedFiles.find(f => f.name === file.name && f.size === file.size)) {
-            uploadedFiles.push(file);
-            displayUploadedFile(file);
-        }
-    });
-    
-    // Update UI based on file count and media type
-    const mediaType = document.querySelector('input[name="media_type"]:checked')?.value;
-    const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
-    
-    if (mediaType === 'carousel') {
-        // Always show Add More Files for carousel
-        if (addMoreFilesBtn) addMoreFilesBtn.style.display = 'inline-block';
-        
-        // Warn if only 1 file for carousel
-        if (uploadedFiles.length === 1) {
-            const statusDiv = document.getElementById('postStatus');
-            if (statusDiv) {
-                showStatus('postStatus', '⚠️ Carousel requires 2-10 files. Currently have 1. Add more files or select "Image"/"Video".', 'warning');
-            }
-        }
-    } else if (uploadedFiles.length > 1) {
-        // Multiple files but not carousel - suggest carousel
-        const statusDiv = document.getElementById('postStatus');
-        if (statusDiv && mediaType !== 'carousel') {
-            showStatus('postStatus', `ℹ️ You have ${uploadedFiles.length} file(s). Select "Carousel" to post all of them, or remove files to post as single ${mediaType}.`, 'info');
-        }
-        if (addMoreFilesBtn) addMoreFilesBtn.style.display = 'inline-block';
-    }
-}
-
-function displayUploadedFile(file) {
-    const container = document.getElementById('uploadedFiles');
-    if (!container) return;
-    
-    const item = document.createElement('div');
-    item.className = 'uploaded-file-item';
-    item.dataset.fileName = file.name;
-    
-    const preview = document.createElement(file.type.startsWith('image/') ? 'img' : 'video');
-    preview.className = 'uploaded-file-preview';
-    if (preview.tagName === 'IMG') {
-        preview.src = URL.createObjectURL(file);
-        preview.alt = file.name;
-    } else {
-        preview.src = URL.createObjectURL(file);
-        preview.controls = true;
-    }
-    
-    const info = document.createElement('div');
-    info.className = 'uploaded-file-info';
-    
-    const name = document.createElement('div');
-    name.className = 'uploaded-file-name';
-    name.textContent = file.name;
-    
-    const size = document.createElement('div');
-    size.className = 'uploaded-file-size';
-    size.textContent = formatFileSize(file.size);
-    
-    info.appendChild(name);
-    info.appendChild(size);
-    
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'uploaded-file-remove';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => {
-        const index = uploadedFiles.findIndex(f => f.name === file.name && f.size === file.size);
-        if (index > -1) {
-            uploadedFiles.splice(index, 1);
-            const urlIndex = uploadedFileUrls.findIndex(url => url.originalName === file.name);
-            if (urlIndex > -1) uploadedFileUrls.splice(urlIndex, 1);
-        }
-        item.remove();
-        URL.revokeObjectURL(preview.src);
-    });
-    
-    item.appendChild(preview);
-    item.appendChild(info);
-    item.appendChild(removeBtn);
-    container.appendChild(item);
-}
-
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-}
-
-function addMediaUrlInput() {
-    const container = document.getElementById('mediaUrlsContainer');
-    if (!container) return;
-    
-    // Check if URL section is visible before adding required attribute
-    const urlSection = document.getElementById('urlSection');
-    const isUrlSectionVisible = urlSection && urlSection.style.display !== 'none';
-    
-    const input = document.createElement('input');
-    input.type = 'url';
-    input.name = 'media_urls[]';
-    input.className = 'form-input';
-    input.placeholder = 'https://example.com/image.jpg';
-    // Only set required if URL section is visible
-    if (isUrlSectionVisible) {
-        input.required = true;
-    }
-    
-    const wrapper = document.createElement('div');
-    wrapper.className = 'media-url-wrapper';
-    wrapper.appendChild(input);
-    
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'btn btn-small btn-danger';
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => wrapper.remove());
-    wrapper.appendChild(removeBtn);
-    
-    container.appendChild(wrapper);
-}
-
-async function uploadFilesToServer() {
-    if (uploadedFiles.length === 0) return [];
-    
-    showStatus('postStatus', 'Uploading files...', 'info');
-    
-    const formData = new FormData();
-    uploadedFiles.forEach(file => {
-        formData.append('files', file);
-    });
-    
+// Accounts
+async function loadAccounts() {
     try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            credentials: 'include',
-            body: formData,
-        });
+        const response = await fetch('/api/config/accounts');
+        const data = await response.json();
+        const container = document.getElementById('account-selector');
         
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'File upload failed');
+        if (!data.accounts || data.accounts.length === 0) {
+            container.innerHTML = '<div class="text-muted">No accounts found. Go to Settings to add one.</div>';
+            return;
         }
-        
-        const result = await response.json();
-        uploadedFileUrls = result.urls || [];
-        return uploadedFileUrls.map(u => u.url);
+
+        container.innerHTML = data.accounts.map(acc => `
+            <label class="card flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-50" style="padding: 0.75rem; border: 1px solid var(--border); margin: 0;">
+                <input type="checkbox" name="account" value="${acc.account_id}" onchange="updateSelectedAccounts()">
+                <div>
+                    <div class="font-medium">${acc.username}</div>
+                    <div class="text-sm text-muted">${acc.account_id}</div>
+                </div>
+            </label>
+        `).join('');
     } catch (error) {
-        console.error('File upload error:', error);
-        throw error;
+        console.error('Failed to load accounts:', error);
+        document.getElementById('account-selector').innerHTML = '<div class="text-error">Failed to load accounts</div>';
     }
 }
 
-async function handleFormSubmit(e) {
-    e.preventDefault();
+function updateSelectedAccounts() {
+    selectedAccounts = Array.from(document.querySelectorAll('input[name="account"]:checked')).map(cb => cb.value);
+}
+
+// Media Type
+function setMediaType(type) {
+    document.getElementById('media-type').value = type;
     
-    // ALWAYS remove required attribute from URL inputs if URL section is hidden
-    // This prevents browser validation errors for hidden required fields
-    const urlSection = document.getElementById('urlSection');
-    const urlInputs = document.querySelectorAll('input[name="media_urls[]"]');
+    // Update buttons
+    document.querySelectorAll('#media-type-buttons button').forEach(btn => {
+        if (btn.dataset.type === type) {
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+        } else {
+            btn.classList.add('btn-secondary');
+            btn.classList.remove('btn-primary');
+        }
+    });
+}
+
+// File Upload
+function setupFileUpload() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    dropZone.onclick = () => fileInput.click();
+
+    dropZone.ondragover = (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--primary)';
+        dropZone.style.background = '#EFF6FF';
+    };
+
+    dropZone.ondragleave = (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--border)';
+        dropZone.style.background = 'transparent';
+    };
+
+    dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--border)';
+        dropZone.style.background = 'transparent';
+        handleFiles(e.dataTransfer.files);
+    };
+
+    fileInput.onchange = (e) => handleFiles(e.target.files);
+}
+
+function handleFiles(files) {
+    const newFiles = Array.from(files);
+    // Validate types
+    const validFiles = newFiles.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
     
-    // Check if URL section is actually visible (not just display:none, but also check computed style)
-    const isUrlSectionVisible = urlSection && 
-        urlSection.style.display !== 'none' && 
-        window.getComputedStyle(urlSection).display !== 'none';
-    
-    if (!isUrlSectionVisible) {
-        // Remove required from all URL inputs when section is hidden
-        urlInputs.forEach(input => {
-            input.removeAttribute('required');
-            input.required = false;
-        });
-    } else {
-        // Even if visible, only require the first input (for single media types)
-        // Additional inputs for carousel should not be required
-        urlInputs.forEach((input, index) => {
-            if (index === 0) {
-                // Keep required on first input if section is visible
-                input.required = true;
-            } else {
-                // Remove required from additional inputs
-                input.removeAttribute('required');
-                input.required = false;
-            }
-        });
+    if (validFiles.length < newFiles.length) {
+        alert('Some files were ignored. Only images and videos are allowed.');
     }
+
+    uploadedFiles = [...uploadedFiles, ...validFiles];
+    updateFileList();
+}
+
+function updateFileList() {
+    const container = document.getElementById('file-list');
     
-    const submitBtn = document.getElementById('submitBtn');
-    const statusDiv = document.getElementById('postStatus');
-    
-    if (submitBtn) submitBtn.disabled = true;
-    showStatus('postStatus', 'Processing...', 'info');
-    
+    if (uploadedFiles.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = uploadedFiles.map((file, index) => `
+        <div class="flex items-center gap-2 p-2 bg-gray-50 border rounded">
+            <span class="text-sm font-medium truncate flex-1">${file.name}</span>
+            <span class="text-sm text-muted">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            <button class="btn btn-danger btn-sm" onclick="removeFile(${index})" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">×</button>
+        </div>
+    `).join('');
+}
+
+function removeFile(index) {
+    uploadedFiles.splice(index, 1);
+    updateFileList();
+}
+
+// Caption
+function setupCaptionCounters() {
+    const caption = document.getElementById('caption');
+    const charCount = document.getElementById('char-count');
+    const hashCount = document.getElementById('hashtag-count');
+
+    caption.oninput = () => {
+        const text = caption.value;
+        charCount.textContent = `${text.length} / 2200`;
+        
+        const hashtags = (text.match(/#[a-zA-Z0-9_]+/g) || []).length;
+        hashCount.textContent = `${hashtags} / 30 hashtags`;
+        
+        if (text.length > 2200) charCount.classList.add('text-error');
+        else charCount.classList.remove('text-error');
+        
+        if (hashtags > 30) hashCount.classList.add('text-error');
+        else hashCount.classList.remove('text-error');
+    };
+}
+
+// Auto DM
+function toggleAutoDM() {
+    const toggle = document.getElementById('auto-dm-toggle');
+    const settings = document.getElementById('auto-dm-settings');
+    if (toggle.checked) {
+        settings.classList.remove('hidden');
+    } else {
+        settings.classList.add('hidden');
+    }
+}
+
+// Submit
+async function submitPost() {
+    if (selectedAccounts.length === 0) {
+        alert('Please select at least one account');
+        return;
+    }
+
+    if (uploadedFiles.length === 0) {
+        alert('Please upload media');
+        return;
+    }
+
+    const mediaType = document.getElementById('media-type').value;
+    if (mediaType === 'carousel' && uploadedFiles.length < 2) {
+        alert('Carousel requires at least 2 files');
+        return;
+    }
+    if (mediaType !== 'carousel' && uploadedFiles.length > 1) {
+        alert(`Single ${mediaType} post can only have 1 file. Use Carousel for multiple.`);
+        return;
+    }
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Uploading media...';
+
     try {
-        // Collect form data
-        const mediaType = document.querySelector('input[name="media_type"]:checked')?.value;
-        const accountId = document.getElementById('account_id')?.value;
-        const caption = document.getElementById('caption')?.value || '';
-        const hashtagsInput = document.getElementById('hashtags')?.value || '';
-        const publishNow = document.getElementById('publish_now')?.checked ?? true;
-        const mediaSource = document.querySelector('input[name="media_source"]:checked')?.value;
+        // 1. Upload files
+        const formData = new FormData();
+        uploadedFiles.forEach(f => formData.append('files', f));
         
-        let urls = [];
-        
-        // Validate carousel requires 2-10 files
-        if (mediaType === 'carousel') {
-            if (mediaSource === 'upload') {
-                if (uploadedFiles.length < 2) {
-                    throw new Error('Carousel posts require 2-10 files. You have ' + uploadedFiles.length + '. Please add more files or select "Image"/"Video" instead.');
-                }
-                if (uploadedFiles.length > 10) {
-                    throw new Error('Carousel posts can have maximum 10 files. You have ' + uploadedFiles.length + '. Please remove ' + (uploadedFiles.length - 10) + ' file(s).');
-                }
-            } else {
-                // URL mode - validate URLs
-                const urlInputs = document.querySelectorAll('input[name="media_urls[]"]');
-                const validUrls = Array.from(urlInputs).map(input => input.value.trim()).filter(url => url);
-                if (validUrls.length < 2) {
-                    throw new Error('Carousel posts require 2-10 media URLs. You have ' + validUrls.length + '. Please add more URLs or select "Image"/"Video" instead.');
-                }
-                if (validUrls.length > 10) {
-                    throw new Error('Carousel posts can have maximum 10 media URLs. You have ' + validUrls.length + '. Please remove ' + (validUrls.length - 10) + ' URL(s).');
-                }
-            }
-        } else {
-            // Single media types should have exactly 1 file/URL
-            if (mediaSource === 'upload' && uploadedFiles.length > 1) {
-                throw new Error(mediaType.charAt(0).toUpperCase() + mediaType.slice(1) + ' posts require exactly 1 file. You have ' + uploadedFiles.length + '. Select "Carousel" to post all files, or remove ' + (uploadedFiles.length - 1) + ' file(s).');
-            }
-        }
-        
-        // Handle file uploads
-        if (mediaSource === 'upload') {
-            if (uploadedFiles.length === 0) {
-                throw new Error('Please upload at least one file');
-            }
-            
-            urls = await uploadFilesToServer();
-            if (urls.length === 0) {
-                throw new Error('Failed to upload files');
-            }
-        } else {
-            // Handle URL inputs
-            const urlInputs = document.querySelectorAll('input[name="media_urls[]"]');
-            urls = Array.from(urlInputs).map(input => input.value.trim()).filter(url => url);
-            
-            if (urls.length === 0) {
-                throw new Error('At least one media URL is required');
-            }
-        }
-        
-        // Parse hashtags
-        const hashtags = hashtagsInput.split(',')
-            .map(tag => tag.trim().replace('#', ''))
-            .filter(tag => tag);
-        
-        // Collect DM file info
-        const dmFileType = document.querySelector('input[name="dm_file_type"]:checked')?.value;
-        const dmTriggerMode = document.querySelector('input[name="dm_trigger_mode"]:checked')?.value || 'AUTO';
-        const dmTriggerWord = document.getElementById('dm_trigger_word')?.value?.trim();
-        let dmFileValue = null;
-        
-        // Explicitly read manual URL input (Task 1 & 2)
-        const manualUrl = document.getElementById('dm_file_path')?.value?.trim();
-        console.log("Manual URL:", manualUrl);
-        
-        // Always assign manualUrl to dmFileValue initially if present
-        if (manualUrl) {
-            dmFileValue = manualUrl;
-        }
-
-        if (dmFileType === 'upload' && dmFileData) {
-            // Upload PDF file first
-            showStatus('postStatus', 'Uploading DM file...', 'info');
-            const dmFormData = new FormData();
-            dmFormData.append('files', dmFileData);
-            
-            try {
-                const dmUploadResponse = await fetch('/api/upload', {
-                    method: 'POST',
-                    credentials: 'include',
-                    body: dmFormData,
-                });
-                
-                // Task 3: Handle upload failure
-                if (!dmUploadResponse.ok) {
-                    const error = await dmUploadResponse.json();
-                    throw new Error(error.detail || 'DM file upload failed');
-                }
-                
-                const dmResult = await dmUploadResponse.json();
-                console.log("Upload result:", dmResult);
-
-                if (dmResult.urls && dmResult.urls.length > 0) {
-                    dmFileValue = dmResult.urls[0].url;
-                }
-            } catch (error) {
-                console.error('DM file upload error:', error);
-                throw error; // Stop execution if upload fails
-            }
-        } else {
-            // Use manual URL if not uploading
-            if (manualUrl) {
-                dmFileValue = manualUrl;
-            }
-        }
-        
-        console.log("Final dmFileValue:", dmFileValue);
-        
-        // Create post request
-        const postData = {
-            media_type: mediaType,
-            urls: urls,
-            caption: caption,
-            hashtags: hashtags,
-            account_id: accountId,
-        };
-        
-        // Create post
-        showStatus('postStatus', 'Creating post...', 'info');
-        const response = await apiRequest('/posts/create', {
+        const uploadRes = await fetch('/api/upload', {
             method: 'POST',
-            body: JSON.stringify(postData),
+            body: formData
         });
         
-        if (!response) {
-            throw new Error('Failed to create post');
-        }
+        if (!uploadRes.ok) throw new Error('Upload failed');
+        const uploadData = await uploadRes.json();
+        const urls = uploadData.urls.map(u => u.url);
+
+        // 2. Prepare Post Data
+        const caption = document.getElementById('caption').value;
+        const scheduledTime = document.getElementById('scheduled-time').value;
         
-        // Attach DM file to the post if provided
-        // Only proceed if we have a file/URL OR if trigger mode is explicitly KEYWORD
-        // This prevents saving config for normal posts (AUTO mode with no file)
-        const shouldSaveDmConfig = dmFileValue || dmTriggerMode === 'KEYWORD';
+        // Auto DM Data
+        const autoDM = document.getElementById('auto-dm-toggle').checked;
+        const dmLink = document.getElementById('dm-link').value;
+        const dmTrigger = document.getElementById('dm-trigger').value;
 
-        if (shouldSaveDmConfig && response.instagram_media_id) {
+        // 3. Post for each account
+        btn.textContent = 'Posting...';
+        let successCount = 0;
+        let errors = [];
+
+        for (const accountId of selectedAccounts) {
             try {
-                // Task 4: Validate
-                if (!dmFileValue) {
-                     throw new Error("No Auto-DM file or URL provided");
-                }
-
-                showStatus('postStatus', 'Saving Auto-DM settings...', 'info');
-
-                // Robust check: if it looks like a URL or NOT like a local path, treat as URL
-                const isUrl = dmFileValue && (dmFileValue.match(/^(http|https):\/\//i) || (!dmFileValue.match(/^[a-zA-Z]:\\/) && !dmFileValue.startsWith('/') && !dmFileValue.startsWith('\\')));
-
-                // Task 5: Build payload
-                const payload = {
-                    file_url: isUrl ? dmFileValue : null,
-                    file_path: !isUrl && dmFileValue ? dmFileValue : null,
-                    trigger_mode: dmTriggerMode,
-                    trigger_word: dmTriggerWord
+                const postData = {
+                    account_id: accountId,
+                    media_type: mediaType,
+                    urls: urls,
+                    caption: caption,
+                    scheduled_time: scheduledTime || null
                 };
 
-                // Task 6: Debug logs
-                console.log("Auto-DM payload:", payload);
+                const postRes = await fetch('/api/posts/create', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(postData)
+                });
 
-                await apiRequest(
-                    `/comment-to-dm/post/${response.instagram_media_id}/file?account_id=${accountId}`,
-                    {
+                if (!postRes.ok) {
+                    const err = await postRes.json();
+                    throw new Error(err.detail || 'Post failed');
+                }
+
+                const postResult = await postRes.json();
+
+                // 4. Configure Auto DM if enabled
+                if (autoDM && dmLink && postResult.instagram_media_id) {
+                    await fetch(`/api/comment-to-dm/post/${postResult.instagram_media_id}/file?account_id=${accountId}`, {
                         method: 'POST',
-                        body: JSON.stringify(payload),
-                    }
-                );
-                showStatus('postStatus', `Post created and Auto-DM configured!`, 'success');
-            } catch (error) {
-                console.error('Failed to attach DM settings:', error);
-                showStatus('postStatus', `Post created successfully! (Auto-DM config failed: ${error.message})`, 'warning');
-            }
-        } else {
-            if (dmFileValue) {
-                showStatus('postStatus', `Post created! Note: DM file will be attached once post is published.`, 'info');
-            } else {
-                showStatus('postStatus', `Post created successfully! Post ID: ${response.post_id}`, 'success');
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            file_url: dmLink,
+                            trigger_mode: dmTrigger ? 'KEYWORD' : 'AUTO',
+                            trigger_word: dmTrigger || 'AUTO'
+                        })
+                    });
+                }
+
+                successCount++;
+            } catch (err) {
+                console.error(`Account ${accountId} error:`, err);
+                errors.push(`${accountId}: ${err.message}`);
             }
         }
-        
-        // If publish now, publish the post
-        if (publishNow && response.post_id) {
-            showStatus('postStatus', 'Publishing post...', 'info');
-            // Note: API endpoint for publishing needs post storage - for now just show created message
-            showStatus('postStatus', 'Post created. Note: Publishing requires post storage implementation.', 'warning');
+
+        // 5. Result
+        let msg = `Successfully posted to ${successCount} accounts.`;
+        if (errors.length > 0) {
+            msg += `\nErrors:\n${errors.join('\n')}`;
         }
         
-        // Reset form after success
-        setTimeout(() => {
-            document.getElementById('postForm')?.reset();
-            document.getElementById('charCount').textContent = '0';
+        alert(msg);
+        
+        if (successCount === selectedAccounts.length) {
+            // Reset form
             uploadedFiles = [];
-            uploadedFileUrls = [];
-            dmFileData = null;
-            const uploadedFilesContainer = document.getElementById('uploadedFiles');
-            if (uploadedFilesContainer) uploadedFilesContainer.innerHTML = '';
-            const dmFilePreview = document.getElementById('dmFilePreview');
-            if (dmFilePreview) dmFilePreview.style.display = 'none';
-            handleMediaSourceChange();
-            handleDmFileTypeChange();
-            handleDmTriggerModeChange();
-        }, 3000);
-        
+            updateFileList();
+            document.getElementById('caption').value = '';
+            document.getElementById('scheduled-time').value = '';
+            // Don't clear accounts/auto-dm just in case they want to reuse
+        }
+
     } catch (error) {
-        showStatus('postStatus', `Error: ${error.message}`, 'error');
+        alert('Error: ' + error.message);
     } finally {
-        if (submitBtn) submitBtn.disabled = false;
+        btn.disabled = false;
+        btn.textContent = 'Post Now';
     }
 }

@@ -1,152 +1,203 @@
-/** Configuration page JavaScript logic */
-
-document.addEventListener('DOMContentLoaded', async () => {
-    // Load configurations
-    await loadAccountConfig();
-    await loadAppSettings();
-    
-    // App settings form handler
-    const appSettingsForm = document.getElementById('appSettingsForm');
-    if (appSettingsForm) {
-        appSettingsForm.addEventListener('submit', handleAppSettingsSubmit);
-    }
+document.addEventListener('DOMContentLoaded', () => {
+    loadAccounts();
+    loadSettings();
+    loadCommentSettings();
 });
 
-async function loadAccountConfig() {
-    const container = document.getElementById('accountsConfig');
-    if (!container) return;
-    
+// Accounts
+async function loadAccounts() {
+    const list = document.getElementById('accounts-list');
+    list.innerHTML = '<div class="text-muted">Loading...</div>';
+
     try {
-        const response = await apiRequest('/config/accounts');
+        const response = await fetch('/api/config/accounts');
+        const data = await response.json();
         
-        if (!response || !response.accounts) {
-            container.innerHTML = '<p class="error-message">Failed to load account configuration</p>';
+        if (!data.accounts || data.accounts.length === 0) {
+            list.innerHTML = '<div class="text-muted">No accounts added.</div>';
             return;
         }
-        
-        const accounts = response.accounts;
-        
-        let html = '';
-        accounts.forEach(account => {
-            const warmingEnabled = account.warming_enabled ? 'checked' : '';
-            const actionTypes = account.action_types || [];
-            
-            html += `
-                <div class="account-config-card">
-                    <h3>${account.username} (${account.account_id})</h3>
-                    
-                    <div class="form-section">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="warming_${account.account_id}" ${warmingEnabled}>
-                            <span>Warming Enabled</span>
-                        </label>
+
+        list.innerHTML = data.accounts.map(acc => `
+            <div class="card flex justify-between items-center" style="margin-bottom: 0.5rem; padding: 1rem; border: 1px solid var(--border);">
+                <div>
+                    <div class="font-bold">${acc.username}</div>
+                    <div class="text-sm text-muted">${acc.account_id}</div>
+                    <div class="text-sm mt-1">
+                        ${acc.warming && acc.warming.enabled ? '<span class="badge badge-info" style="background: #DBEAFE; color: #1E40AF;">Warming On</span>' : '<span class="text-muted">Warming Off</span>'}
                     </div>
-                    
-                    <div class="form-section">
-                        <label class="form-label">Daily Actions</label>
-                        <input type="number" id="daily_actions_${account.account_id}" 
-                               value="${account.daily_actions}" min="0" class="form-input">
-                    </div>
-                    
-                    <div class="form-section">
-                        <label class="form-label">Action Types</label>
-                        <div class="checkbox-group">
-                            ${['like', 'comment', 'follow', 'story_view'].map(type => `
-                                <label class="checkbox-label">
-                                    <input type="checkbox" name="action_types_${account.account_id}" 
-                                           value="${type}" ${actionTypes.includes(type) ? 'checked' : ''}>
-                                    <span>${type}</span>
-                                </label>
-                            `).join('')}
-                        </div>
-                    </div>
-                    
-                    <button type="button" class="btn btn-primary" 
-                            onclick="saveAccountConfig('${account.account_id}')">Save Account</button>
-                    <div id="status_${account.account_id}" class="status-message" style="display: none;"></div>
                 </div>
-            `;
-        });
-        
-        container.innerHTML = html;
+                <div class="flex gap-2">
+                    <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick="editAccount('${acc.account_id}')">Edit</button>
+                    <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;" onclick="deleteAccount('${acc.account_id}')">Delete</button>
+                </div>
+            </div>
+        `).join('');
+
     } catch (error) {
-        console.error('Failed to load account config:', error);
-        container.innerHTML = `<p class="error-message">Error loading configuration: ${error.message}</p>`;
+        console.error('Failed to load accounts:', error);
+        list.innerHTML = '<div class="text-error">Failed to load accounts.</div>';
     }
 }
 
-async function loadAppSettings() {
+// Global Settings
+async function loadSettings() {
     try {
-        const response = await apiRequest('/config/settings');
+        const response = await fetch('/api/config/settings');
+        const settings = await response.json();
         
-        if (!response) return;
-        
-        const scheduleTime = response.warming_schedule_time || '09:00';
-        const timeInput = document.getElementById('warming_schedule_time');
-        if (timeInput) {
-            timeInput.value = scheduleTime;
+        if (settings.warming) {
+            document.getElementById('warming-schedule').value = settings.warming.schedule_time || "09:00";
+        }
+        if (settings.instagram && settings.instagram.rate_limit) {
+            document.getElementById('rate-hour').value = settings.instagram.rate_limit.requests_per_hour || 200;
+            document.getElementById('rate-minute').value = settings.instagram.rate_limit.requests_per_minute || 20;
+        }
+        if (settings.instagram && settings.instagram.posting) {
+            document.getElementById('post-retries').value = settings.instagram.posting.max_retries || 3;
         }
     } catch (error) {
-        console.error('Failed to load app settings:', error);
+        console.error('Failed to load settings:', error);
     }
 }
 
-async function saveAccountConfig(accountId) {
-    const statusDiv = document.getElementById(`status_${accountId}`);
+async function saveGlobalSettings() {
+    try {
+        const currentSettingsRes = await fetch('/api/config/settings');
+        const currentSettings = await currentSettingsRes.json();
+        
+        // Update fields
+        if (!currentSettings.warming) currentSettings.warming = {};
+        currentSettings.warming.schedule_time = document.getElementById('warming-schedule').value;
+        
+        if (!currentSettings.instagram) currentSettings.instagram = {};
+        if (!currentSettings.instagram.rate_limit) currentSettings.instagram.rate_limit = {};
+        currentSettings.instagram.rate_limit.requests_per_hour = parseInt(document.getElementById('rate-hour').value);
+        currentSettings.instagram.rate_limit.requests_per_minute = parseInt(document.getElementById('rate-minute').value);
+        
+        if (!currentSettings.instagram.posting) currentSettings.instagram.posting = {};
+        currentSettings.instagram.posting.max_retries = parseInt(document.getElementById('post-retries').value);
+        
+        const response = await fetch('/api/config/settings', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(currentSettings)
+        });
+        
+        if (!response.ok) throw new Error('Failed to save settings');
+        
+        alert('Settings saved!');
+    } catch (error) {
+        alert('Error saving settings: ' + error.message);
+    }
+}
+
+// Comment Settings
+async function loadCommentSettings() {
+    // Placeholder for now
+}
+
+async function saveCommentSettings() {
+    alert('Global comment settings not yet implemented in backend schema.');
+}
+
+// Account Modal
+function showAddAccountModal() {
+    const modal = document.getElementById('account-modal');
+    modal.style.display = 'block';
+    modal.classList.remove('hidden');
+    document.getElementById('modal-title').textContent = 'Add Account';
+    document.getElementById('acc-mode').value = 'add';
+    document.getElementById('account-form').reset();
+    document.getElementById('acc-id').disabled = false;
+}
+
+function closeAccountModal() {
+    const modal = document.getElementById('account-modal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+}
+
+async function saveAccount() {
+    const mode = document.getElementById('acc-mode').value;
+    const accountId = document.getElementById('acc-id').value;
+    const username = document.getElementById('acc-username').value;
+    const token = document.getElementById('acc-token').value;
+    const warming = document.getElementById('acc-warming').checked;
+    
+    if (!accountId || !username || !token) {
+        alert("Please fill all fields");
+        return;
+    }
+
+    const accountData = {
+        account_id: accountId,
+        username: username,
+        access_token: token,
+        warming: {
+            enabled: warming,
+            daily_actions: 10, // Default
+            action_types: ["like", "comment"] // Default
+        },
+        proxy: { enabled: false } // Default
+    };
     
     try {
-        const warmingEnabled = document.getElementById(`warming_${accountId}`)?.checked;
-        const dailyActions = parseInt(document.getElementById(`daily_actions_${accountId}`)?.value || '0');
-        const actionTypeInputs = document.querySelectorAll(`input[name="action_types_${accountId}"]:checked`);
-        const actionTypes = Array.from(actionTypeInputs).map(input => input.value);
+        const url = mode === 'add' ? '/api/config/accounts/add' : `/api/config/accounts/${accountId}`;
+        const method = mode === 'add' ? 'POST' : 'PUT';
         
-        const body = {
-            account_id: accountId,
-            warming_enabled: warmingEnabled,
-            daily_actions: dailyActions,
-            action_types: actionTypes,
-        };
-        
-        const response = await apiRequest('/config/accounts', {
-            method: 'PUT',
-            body: JSON.stringify(body),
+        const response = await fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(accountData)
         });
         
-        if (response) {
-            showStatus(`status_${accountId}`, 'Account configuration saved successfully!', 'success');
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Failed to save account');
         }
+        
+        closeAccountModal();
+        loadAccounts();
+        alert('Account saved!');
     } catch (error) {
-        showStatus(`status_${accountId}`, `Error: ${error.message}`, 'error');
+        alert('Error: ' + error.message);
     }
 }
 
-async function handleAppSettingsSubmit(e) {
-    e.preventDefault();
-    const statusDiv = document.getElementById('settingsStatus');
+async function editAccount(accountId) {
+    try {
+        const response = await fetch('/api/config/accounts');
+        const data = await response.json();
+        const account = data.accounts.find(a => a.account_id === accountId);
+        
+        if (!account) return;
+        
+        showAddAccountModal();
+        document.getElementById('modal-title').textContent = 'Edit Account';
+        document.getElementById('acc-mode').value = 'edit';
+        document.getElementById('acc-id').value = account.account_id;
+        document.getElementById('acc-id').disabled = true;
+        document.getElementById('acc-username').value = account.username;
+        document.getElementById('acc-token').value = account.access_token;
+        document.getElementById('acc-warming').checked = account.warming?.enabled || false;
+    } catch (error) {
+        console.error('Failed to load account details:', error);
+    }
+}
+
+async function deleteAccount(accountId) {
+    if (!confirm('Are you sure you want to delete this account?')) return;
     
     try {
-        const scheduleTime = document.getElementById('warming_schedule_time')?.value;
-        
-        if (!scheduleTime) {
-            throw new Error('Schedule time is required');
-        }
-        
-        const body = {
-            warming_schedule_time: scheduleTime,
-        };
-        
-        const response = await apiRequest('/config/settings', {
-            method: 'PUT',
-            body: JSON.stringify(body),
+        const response = await fetch(`/api/config/accounts/${accountId}`, {
+            method: 'DELETE'
         });
         
-        if (response) {
-            showStatus('settingsStatus', 'Settings saved successfully!', 'success');
-        }
+        if (!response.ok) throw new Error('Failed to delete');
+        
+        loadAccounts();
     } catch (error) {
-        showStatus('settingsStatus', `Error: ${error.message}`, 'error');
+        alert('Error deleting account: ' + error.message);
     }
 }
-
-// Make saveAccountConfig available globally
-window.saveAccountConfig = saveAccountConfig;

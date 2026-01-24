@@ -1,0 +1,22 @@
+accounts:
+- account_id: '1405915827600672'
+  username: mr_tony.87
+  access_token: EAAbDa5hBPloBQkRBLkVEONTZAEUAsYDYcRbibnPDvBReEIN2W1Q2qdOzZAzrZCgl8baUhwUkewYKVpZCs57NZBYTzybYhQMuaTXWjItILCG6E3i8ntdAPxmkKH9wk4fGkD8PQQzCbKeGnZAOdfccYGBDpTS6JSVxUYOin6anrRV7EZBNMmOE04JsZAo3qEHwc0jNo78OA2ZCScupXpkZBDKBFzLMj4KWBQ3UoQ
+  basic_display_token: IGAATZBrEl8ZCSBBZAGJLM2JmRVp4R3g4eTV5TEtUMEJkXzB0LU0xbllWNDJ0ZAVg0d3NLTVZAyTzBCSkNsV3lPQkFwZA2gyZAzU5ZAFZASd2dDMTRXeHMxZAmpHczh4cnlrVTNfTUpqMGNjeVo4Q0haYXdvOFNIVlpBaGYwQ01sQU5KajdJMAZDZD
+  password: 12345678@
+  proxy:
+    enabled: false
+  warming:
+    enabled: false
+    daily_actions: 10
+    action_types:
+    - like
+    - comment
+    - follow
+    - story_view
+  comment_to_dm:
+    enabled: false
+    trigger_keyword: AUTO
+    dm_message_template: "Hey {username} \xF0\u0178\u2018\u2039 Thanks for commenting!\
+      \ Here's the link you requested: {link}"
+    link_to_send: file:///C:/Users/kanis/Downloads/2508843519.pdf

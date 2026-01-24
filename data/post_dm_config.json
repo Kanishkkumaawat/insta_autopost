@@ -22,5 +22,13 @@
     "file_path": null,
     "trigger_mode": "AUTO",
     "trigger_word": ""
+  },
+  "1405915827600672:18130187242519495": {
+    "account_id": "1405915827600672",
+    "media_id": "18130187242519495",
+    "file_url": "file:///\"C:/Users/kanis/Downloads/1-1-Network-Topology-Worksheet.pdf\"",
+    "file_path": "\"C:\\Users\\kanis\\Downloads\\1-1-Network-Topology-Worksheet.pdf\"",
+    "trigger_mode": "AUTO",
+    "trigger_word": null
   }
 }

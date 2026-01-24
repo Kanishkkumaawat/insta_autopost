@@ -3,7 +3,7 @@ app:
   version: 1.0.0
   environment: ${ENVIRONMENT:production}
 instagram:
-  api_base_url: https://graph.instagram.com
+  api_base_url: https://graph.facebook.com
   api_version: v18.0
   rate_limit:
     requests_per_hour: 200
@@ -28,3 +28,7 @@ proxies:
   connection_timeout: 60  # Increased for Instagram API requests
   max_retries: 3
   verify_ssl: false
+  webhooks:
+  enabled: true
+
+

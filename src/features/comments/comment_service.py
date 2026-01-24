@@ -1,6 +1,7 @@
 """Comment automation service - Auto-reply to comments"""
 
 import time
+import random
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
@@ -18,24 +19,25 @@ class CommentService:
     Features:
     - Auto-reply to comments
     - Comment monitoring
-    - Template-based replies
-    - Keyword-based routing
+    - Template-based replies (random rotation)
+    - Keyword-based routing (optional if dict provided)
     """
     
     def __init__(
         self,
         account_service: AccountService,
         auto_reply_enabled: bool = True,
-        reply_templates: Optional[Dict[str, str]] = None,
+        reply_templates: Optional[List[str]] = None,
+        reply_delay_seconds: int = 30,
     ):
         self.account_service = account_service
         self.auto_reply_enabled = auto_reply_enabled
-        self.reply_templates = reply_templates or {
-            "default": "Thanks for your comment! 🙏",
-            "question": "Thanks for asking! I'll get back to you soon. 👍",
-            "positive": "Thank you so much! ❤️",
-            "negative": "Thanks for the feedback! We appreciate it. 💪",
-        }
+        self.reply_templates = reply_templates or [
+            "Thanks for your comment! 🙏",
+            "Appreciate it! ❤️",
+            "Thanks! 👍",
+        ]
+        self.reply_delay_seconds = reply_delay_seconds
         self.processed_comments: Dict[str, List[str]] = {}  # account_id -> [comment_ids]
     
     def get_comments(self, account_id: str, media_id: str) -> List[Dict[str, Any]]:
@@ -78,84 +80,37 @@ class CommentService:
                 comments_count_from_media = None
             
             # Get comments from media
-            # Note: Instagram Graph API requires 'instagram_manage_comments' permission
-            # Without this permission, the API will return empty data even if comments exist
             response = client._make_request(
                 "GET",
                 f"{media_id}/comments",
                 params={
                     "fields": "id,text,username,timestamp,like_count,replies",
-                    "limit": 100,  # Increased limit to get more comments
+                    "limit": 100,
                 }
             )
             
             comments = response.get("data", [])
             
-            # Enhanced logging for debugging
-            logger.info(
-                "Retrieved comments from API",
-                account_id=account_id,
-                media_id=media_id,
-                comment_count=len(comments),
-                comments_count_from_media=comments_count_from_media,
-                response_keys=list(response.keys()),
-                has_paging="paging" in response,
-            )
-            
-            # Check if there's a mismatch between media count and actual comments
             if comments_count_from_media is not None and comments_count_from_media > 0 and len(comments) == 0:
                 logger.warning(
                     "API returned 0 comments but media shows comments exist",
                     account_id=account_id,
                     media_id=media_id,
                     comments_count_from_media=comments_count_from_media,
-                    note="This usually means missing 'instagram_manage_comments' permission. "
-                         "Regenerate access token with this permission to read comments.",
-                )
-            
-            # Check if there's pagination info
-            if "paging" in response:
-                logger.debug(
-                    "Comments response has pagination",
-                    account_id=account_id,
-                    media_id=media_id,
-                    paging_keys=list(response["paging"].keys()) if isinstance(response.get("paging"), dict) else None,
-                )
-            
-            # If no comments but API returned successfully, log a helpful message
-            if len(comments) == 0:
-                logger.debug(
-                    "No comments found via API",
-                    account_id=account_id,
-                    media_id=media_id,
-                    note="This may be normal if post has no comments, OR it may indicate missing permissions. "
-                         "Check if 'instagram_manage_comments' permission is granted in your access token.",
+                    note="This usually means missing 'instagram_manage_comments' permission.",
                 )
             
             return comments
             
         except Exception as e:
             error_code = getattr(e, 'error_code', None)
-            error_subcode = getattr(e, 'error_subcode', None)
-            
             logger.error(
                 "Failed to get comments",
                 account_id=account_id,
                 media_id=media_id,
                 error=str(e),
                 error_code=error_code,
-                error_subcode=error_subcode,
             )
-            
-            # If it's a permissions error, log helpful message
-            if error_code in [190, 200, 10]:
-                logger.warning(
-                    "Comment retrieval failed - likely a permissions issue. "
-                    "Ensure your access token has 'instagram_basic' and 'instagram_manage_comments' permissions.",
-                    account_id=account_id,
-                    media_id=media_id,
-                )
-            
             return []
     
     def reply_to_comment(
@@ -183,7 +138,6 @@ class CommentService:
         
         try:
             # Reply to comment using Instagram Graph API
-            # Note: Instagram Graph API uses the comment ID to reply
             result = client._make_request(
                 "POST",
                 f"{comment_id}/replies",
@@ -225,7 +179,7 @@ class CommentService:
     
     def generate_reply(self, comment_text: str, comment_username: Optional[str] = None) -> str:
         """
-        Generate a reply based on comment content
+        Generate a reply based on comment content (Random rotation)
         
         Args:
             comment_text: Original comment text
@@ -234,22 +188,14 @@ class CommentService:
         Returns:
             Reply text
         """
-        comment_lower = comment_text.lower()
+        if not self.reply_templates:
+            return "Thanks! 🙏"
+            
+        template = random.choice(self.reply_templates)
         
-        # Simple keyword-based routing (can be enhanced with AI)
-        if any(word in comment_lower for word in ["?", "how", "what", "when", "where", "why"]):
-            template = self.reply_templates.get("question", self.reply_templates["default"])
-        elif any(word in comment_lower for word in ["love", "amazing", "great", "awesome", "nice", "beautiful"]):
-            template = self.reply_templates.get("positive", self.reply_templates["default"])
-        elif any(word in comment_lower for word in ["hate", "bad", "terrible", "worst", "dislike"]):
-            template = self.reply_templates.get("negative", self.reply_templates["default"])
-        else:
-            template = self.reply_templates.get("default", "Thanks for your comment! 🙏")
-        
-        # Personalize with username if available
-        if comment_username and "@" not in template:
-            # Simple personalization (can be enhanced)
-            return f"@{comment_username} {template}"
+        # Personalize with username if available and template has placeholder or no mention
+        # Simple logic: if username provided, maybe prepend/append?
+        # For now, keep it simple.
         
         return template
     
@@ -285,6 +231,8 @@ class CommentService:
         if account_id not in self.processed_comments:
             self.processed_comments[account_id] = []
         
+        processed_in_batch = 0
+        
         for comment in comments:
             comment_id = comment.get("id")
             comment_text = comment.get("text", "")
@@ -306,12 +254,15 @@ class CommentService:
             # Generate and send reply
             reply_text = self.generate_reply(comment_text, comment_username)
             
+            # Add delay between replies
+            if processed_in_batch > 0:
+                time.sleep(self.reply_delay_seconds)
+                
             reply_result = self.reply_to_comment(account_id, comment_id, reply_text)
             
             if reply_result.get("status") == "success":
                 results["replied"] += 1
-                # Add delay between replies to avoid rate limits
-                time.sleep(2)
+                processed_in_batch += 1
             else:
                 results["failed"] += 1
         

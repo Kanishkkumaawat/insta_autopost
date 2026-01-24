@@ -9,10 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
-from starlette.middleware.sessions import SessionMiddleware
 
 from .api import router as api_router
-from .auth import require_auth, SESSION_COOKIE_NAME
 from src.app import InstaForgeApp
 
 # Add parent directory to path
@@ -24,9 +22,6 @@ app = FastAPI(
     description="Web dashboard for Instagram automation",
     version="1.0.0",
 )
-
-# Session middleware
-app.add_middleware(SessionMiddleware, secret_key="instaforge-secret-key-change-in-production")
 
 # CORS middleware
 app.add_middleware(
@@ -74,8 +69,6 @@ async def serve_upload_file(filename: str, request: Request):
     - MUST be publicly accessible (no auth, no cookies required)
     - MUST support HEAD requests
     - MUST not redirect
-    
-    This route is intentionally NOT protected by authentication middleware.
     """
     import mimetypes
     
@@ -218,8 +211,6 @@ async def shutdown_event():
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main posting page"""
-    if not require_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
     content = render_template("index.html", {"request": request})
     return HTMLResponse(content=content)
 
@@ -227,8 +218,6 @@ async def index(request: Request):
 @app.get("/posts", response_class=HTMLResponse)
 async def posts_page(request: Request):
     """Published posts page"""
-    if not require_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
     content = render_template("posts.html", {"request": request})
     return HTMLResponse(content=content)
 
@@ -236,8 +225,6 @@ async def posts_page(request: Request):
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request):
     """Logs viewer page"""
-    if not require_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
     content = render_template("logs.html", {"request": request})
     return HTMLResponse(content=content)
 
@@ -245,19 +232,7 @@ async def logs_page(request: Request):
 @app.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
     """Configuration page"""
-    if not require_auth(request):
-        return RedirectResponse(url="/login", status_code=302)
     content = render_template("config.html", {"request": request})
-    return HTMLResponse(content=content)
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    """Login page"""
-    # If already authenticated, redirect to main page
-    if require_auth(request):
-        return RedirectResponse(url="/", status_code=302)
-    content = render_template("login.html", {"request": request})
     return HTMLResponse(content=content)
 
 

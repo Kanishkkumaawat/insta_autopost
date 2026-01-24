@@ -1,56 +1,100 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InstaForge - Configuration</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <h2 class="nav-title">InstaForge</h2>
-            <div class="nav-links">
-                <a href="/" class="nav-link">Post</a>
-                <a href="/posts" class="nav-link">Published</a>
-                <a href="/logs" class="nav-link">Logs</a>
-                <a href="/config" class="nav-link active">Config</a>
-                <a href="#" id="logoutBtn" class="nav-link">Logout</a>
+{% extends "layout.html" %}
+
+{% block title %}Settings{% endblock %}
+{% block page_title %}Configuration{% endblock %}
+
+{% block content %}
+<div class="grid grid-2">
+    <!-- Accounts Section -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-4">
+            <h2>Accounts</h2>
+            <button class="btn btn-primary" onclick="showAddAccountModal()">+ Add Account</button>
+        </div>
+        <div id="accounts-list" class="flex flex-col gap-2">
+            <div class="text-muted">Loading accounts...</div>
+        </div>
+    </div>
+
+    <!-- Global Settings Section -->
+    <div class="card">
+        <div class="flex justify-between items-center mb-4">
+            <h2>Global Settings</h2>
+            <button class="btn btn-primary" onclick="saveGlobalSettings()">Save Changes</button>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Warming Schedule Time</label>
+            <input type="time" id="warming-schedule" class="form-control">
+            <div class="text-sm text-muted">Daily time to run warming actions</div>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label">Rate Limit (Requests/Hour)</label>
+            <input type="number" id="rate-hour" class="form-control">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Rate Limit (Requests/Minute)</label>
+            <input type="number" id="rate-minute" class="form-control">
+        </div>
+
+        <div class="form-group">
+             <label class="form-label">Posting Max Retries</label>
+             <input type="number" id="post-retries" class="form-control">
+        </div>
+    </div>
+</div>
+
+<!-- Comment Automation Settings (Placeholder for Phase 6, but good to have structure) -->
+<div class="card mt-4">
+    <div class="flex justify-between items-center mb-4">
+        <h2>Comment Automation Defaults</h2>
+        <button class="btn btn-primary" onclick="saveCommentSettings()">Save</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Default Templates (One per line)</label>
+        <textarea id="comment-templates" class="form-control" rows="4" placeholder="🔥\nLove this!\nGreat post!"></textarea>
+    </div>
+</div>
+
+<!-- Add/Edit Account Modal -->
+<div id="account-modal" class="modal hidden" style="display: none;">
+    <div class="modal-content card" style="position: relative; margin: 10% auto;">
+        <h3 id="modal-title">Add Account</h3>
+        <form id="account-form" onsubmit="event.preventDefault(); saveAccount();">
+            <input type="hidden" id="acc-mode" value="add">
+            
+            <div class="form-group">
+                <label class="form-label">Account ID (Instagram Business ID)</label>
+                <input type="text" id="acc-id" class="form-control" required>
+                <div class="text-sm text-muted">Found in Facebook Business Manager</div>
             </div>
-        </div>
-    </nav>
-
-    <main class="container">
-        <div class="page-header">
-            <h1>Configuration</h1>
-            <p>Manage account and app settings</p>
-        </div>
-
-        <!-- Account Settings -->
-        <div class="config-section">
-            <h2>Account Settings</h2>
-            <div id="accountsConfig" class="config-form">
-                <p class="loading">Loading account settings...</p>
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" id="acc-username" class="form-control" required>
             </div>
-        </div>
+            <div class="form-group">
+                <label class="form-label">Access Token</label>
+                <textarea id="acc-token" class="form-control" rows="3" required></textarea>
+            </div>
+            
+            <!-- Warming Config -->
+            <div class="form-group">
+                 <label class="form-label flex items-center gap-2">
+                     <input type="checkbox" id="acc-warming"> Enable Warming
+                 </label>
+            </div>
+            
+            <div class="flex justify-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="closeAccountModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Account</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
 
-        <!-- App Settings -->
-        <div class="config-section">
-            <h2>App Settings</h2>
-            <form id="appSettingsForm" class="config-form">
-                <div class="form-section">
-                    <label for="warming_schedule_time" class="form-label">Warming Schedule Time</label>
-                    <input type="time" id="warming_schedule_time" name="warming_schedule_time" class="form-input" value="09:00">
-                    <small class="form-help">Daily warming action time (HH:MM)</small>
-                </div>
-
-                <button type="submit" class="btn btn-primary">Save Settings</button>
-                <div id="settingsStatus" class="status-message" style="display: none;"></div>
-            </form>
-        </div>
-    </main>
-
-    <script src="/static/js/app.js"></script>
-    <script src="/static/js/config.js"></script>
-</body>
-</html>
+{% block scripts %}
+<script src="/static/js/config.js"></script>
+{% endblock %}

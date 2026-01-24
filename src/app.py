@@ -4,7 +4,7 @@ import schedule
 import time
 from datetime import datetime
 
-from .utils.config_loader import ConfigLoader
+from .utils.config import config_manager
 from .utils.logger import setup_logger, get_logger
 from .api.rate_limiter import RateLimiter
 from .services.account_service import AccountService
@@ -21,9 +21,8 @@ logger = get_logger(__name__)
 class InstaForgeApp:
     """Main application class for Instagram management"""
     
-    def __init__(self, config_dir: str = "config"):
+    def __init__(self, config_dir: str = "data"):
         self.config_dir = config_dir
-        self.config_loader = ConfigLoader(config_dir)
         self.config = None
         self.accounts = []
         self.rate_limiter = None
@@ -34,14 +33,16 @@ class InstaForgeApp:
         self.comment_service = None
         self.comment_monitor = None
         self.comment_to_dm_service = None
+        # Expose config_manager as config_loader for backward compatibility if needed
+        self.config_loader = config_manager
     
     def initialize(self):
         """Initialize the application"""
         logger.info("Initializing InstaForge application")
         
         # Load configuration
-        self.config = self.config_loader.load_settings()
-        self.accounts = self.config_loader.load_accounts()
+        self.config = config_manager.load_settings()
+        self.accounts = config_manager.load_accounts()
         
         # Set up logging
         setup_logger(
@@ -117,9 +118,12 @@ class InstaForgeApp:
         )
         
         # Initialize comment automation
+        # Using global settings from config
         self.comment_service = CommentService(
             account_service=self.account_service,
-            auto_reply_enabled=True,
+            auto_reply_enabled=self.config.comments.enabled,
+            reply_templates=self.config.comments.templates,
+            reply_delay_seconds=self.config.comments.delay_seconds,
         )
         
         # Initialize comment-to-DM automation service

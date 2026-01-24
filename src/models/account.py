@@ -56,6 +56,7 @@ class Account(BaseModel):
     account_id: str
     username: str
     access_token: str
+    basic_display_token: Optional[str] = None # Secondary token for basic display features
     password: Optional[str] = None  # For browser automation login
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     warming: WarmingConfig = Field(default_factory=WarmingConfig)

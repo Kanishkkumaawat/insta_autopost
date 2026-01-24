@@ -1,49 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InstaForge - Activity Logs</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-</head>
-<body>
-    <nav class="navbar">
-        <div class="nav-container">
-            <h2 class="nav-title">InstaForge</h2>
-            <div class="nav-links">
-                <a href="/" class="nav-link">Post</a>
-                <a href="/posts" class="nav-link">Published</a>
-                <a href="/logs" class="nav-link active">Logs</a>
-                <a href="/config" class="nav-link">Config</a>
-                <a href="#" id="logoutBtn" class="nav-link">Logout</a>
-            </div>
-        </div>
-    </nav>
+{% extends "layout.html" %}
 
-    <main class="container">
-        <div class="page-header">
-            <h1>Activity Logs</h1>
-            <div class="log-controls">
-                <select id="logLevel" class="form-input">
-                    <option value="">All Levels</option>
-                    <option value="INFO">INFO</option>
-                    <option value="WARNING">WARNING</option>
-                    <option value="ERROR">ERROR</option>
-                </select>
-                <label class="checkbox-label">
-                    <input type="checkbox" id="autoRefresh" checked>
-                    <span>Auto-refresh</span>
-                </label>
-                <button id="refreshLogsBtn" class="btn btn-secondary">Refresh</button>
-            </div>
-        </div>
+{% block title %}Logs{% endblock %}
+{% block page_title %}System Logs{% endblock %}
 
-        <div id="logsContainer" class="logs-container">
-            <p class="empty-state">Loading logs...</p>
-        </div>
-    </main>
+{% block actions %}
+<div class="flex gap-2">
+    <select id="log-level" class="form-control" style="width: auto;" onchange="loadLogs()">
+        <option value="">All Levels</option>
+        <option value="INFO">Info</option>
+        <option value="WARNING">Warning</option>
+        <option value="ERROR">Error</option>
+    </select>
+    <button class="btn btn-secondary" onclick="loadLogs()">Refresh</button>
+</div>
+{% endblock %}
 
-    <script src="/static/js/app.js"></script>
-    <script src="/static/js/logs.js"></script>
-</body>
-</html>
+{% block content %}
+<div class="card" style="padding: 0; overflow: hidden;">
+    <div style="overflow-x: auto;">
+        <table class="log-table">
+            <thead>
+                <tr>
+                    <th style="width: 180px">Time</th>
+                    <th style="width: 100px">Level</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody id="logs-body">
+                <tr><td colspan="3" class="text-muted" style="padding: 1rem;">Loading logs...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/logs.js"></script>
+{% endblock %}

@@ -1,22 +1,20 @@
-"""Utility modules"""
-
 from .logger import setup_logger, get_logger
-from .config_loader import ConfigLoader
+from .config import config_manager
 from .exceptions import (
-    InstagramAPIError,
+    InstaForgeError,
+    ConfigError,
+    APIError,
+    AuthenticationError,
     RateLimitError,
-    AccountError,
-    PostingError,
-    ProxyError,
 )
 
 __all__ = [
     "setup_logger",
     "get_logger",
-    "ConfigLoader",
-    "InstagramAPIError",
+    "config_manager",
+    "InstaForgeError",
+    "ConfigError",
+    "APIError",
+    "AuthenticationError",
     "RateLimitError",
-    "AccountError",
-    "PostingError",
-    "ProxyError",
 ]
