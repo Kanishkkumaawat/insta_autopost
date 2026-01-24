@@ -13,6 +13,9 @@ class CreatePostRequest(BaseModel):
     hashtags: List[str] = Field(default_factory=list)
     account_id: str
     scheduled_time: Optional[datetime] = None
+    # Auto-DM settings
+    auto_dm_mode: Optional[str] = Field("AUTO", description="AUTO or KEYWORD")
+    auto_dm_trigger: Optional[str] = Field(None, description="Trigger keyword if mode is KEYWORD")
 
 
 class PostResponse(BaseModel):

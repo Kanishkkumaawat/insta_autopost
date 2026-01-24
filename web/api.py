@@ -803,11 +803,20 @@ async def set_post_dm_file(
     _auth=Depends(check_auth),
     app: InstaForgeApp = Depends(get_app),
 ):
-    """Set file/link to send when someone comments on a specific post"""
+    """Set file/link and trigger settings for a specific post"""
     try:
         body = await request.json()
+        print(f"DEBUG: set_post_dm_file payload: {body}")
+        
         file_path = body.get("file_path")
         file_url = body.get("file_url")
+        trigger_mode = body.get("trigger_mode", "AUTO")
+        trigger_word = body.get("trigger_word")
+        
+        # Validation: Ensure we have a file or URL
+        if (not file_url or file_url == "") and (not file_path or file_path == ""):
+            print(f"WARNING: No file provided for Auto-DM. Payload: {body}")
+            raise HTTPException(status_code=400, detail="Auto-DM requires a valid file URL or path.")
         
         if not app.comment_to_dm_service:
             raise HTTPException(status_code=500, detail="Comment-to-DM service not initialized")
@@ -819,12 +828,14 @@ async def set_post_dm_file(
                 raise HTTPException(status_code=404, detail="No accounts configured")
             account_id = accounts[0].account_id
         
-        # Set post-specific file
+        # Set post-specific file and triggers
         app.comment_to_dm_service.post_dm_config.set_post_dm_file(
             account_id=account_id,
             media_id=media_id,
             file_path=file_path,
             file_url=file_url,
+            trigger_mode=trigger_mode,
+            trigger_word=trigger_word,
         )
         
         return {
@@ -832,11 +843,13 @@ async def set_post_dm_file(
             "account_id": account_id,
             "media_id": media_id,
             "file_url": file_url or file_path,
+            "trigger_mode": trigger_mode,
+            "trigger_word": trigger_word,
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to set post DM file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to set post DM config: {str(e)}")
 
 
 @router.get("/comment-to-dm/post/{media_id}/file")
@@ -847,7 +860,7 @@ async def get_post_dm_file(
     _auth=Depends(check_auth),
     app: InstaForgeApp = Depends(get_app),
 ):
-    """Get file/link configured for a specific post"""
+    """Get configuration for a specific post"""
     try:
         if not app.comment_to_dm_service:
             raise HTTPException(status_code=500, detail="Comment-to-DM service not initialized")
@@ -859,16 +872,26 @@ async def get_post_dm_file(
                 raise HTTPException(status_code=404, detail="No accounts configured")
             account_id = accounts[0].account_id
         
-        file_url = app.comment_to_dm_service.post_dm_config.get_post_dm_file(
+        config = app.comment_to_dm_service.post_dm_config.get_post_dm_config(
             account_id=account_id,
             media_id=media_id,
         )
         
+        if config:
+            return {
+                "account_id": account_id,
+                "media_id": media_id,
+                "file_url": config.get("file_url"),
+                "trigger_mode": config.get("trigger_mode", "AUTO"),
+                "trigger_word": config.get("trigger_word"),
+                "has_config": True,
+            }
+        
         return {
             "account_id": account_id,
             "media_id": media_id,
-            "file_url": file_url,
-            "has_file": file_url is not None,
+            "file_url": None,
+            "has_config": False,
         }
     except HTTPException:
         raise

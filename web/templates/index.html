@@ -155,6 +155,26 @@
                         <input type="text" id="dm_file_path" name="dm_file_path" class="form-input" placeholder="C:/Users/kanis/Downloads/file.pdf or https://example.com/file.pdf">
                         <small class="form-help">Enter local file path (e.g., C:/Users/kanis/Downloads/2508843519.pdf) or web URL</small>
                     </div>
+
+                    <!-- Trigger Mode Selection -->
+                    <div style="margin-top: 1rem; border-top: 1px dashed #E5E7EB; padding-top: 1rem;">
+                        <label class="form-label" style="font-size: 0.95rem;">Trigger Logic</label>
+                        <div style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
+                            <label class="radio-label">
+                                <input type="radio" name="dm_trigger_mode" value="AUTO" checked>
+                                <span>Auto (Any Comment)</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="dm_trigger_mode" value="KEYWORD">
+                                <span>Specific Keyword</span>
+                            </label>
+                        </div>
+                        
+                        <div id="dmKeywordSection" style="display: none; margin-top: 0.5rem;">
+                            <input type="text" id="dm_trigger_word" class="form-input" placeholder="e.g. SEND, GUIDE, PDF">
+                            <small class="form-help">Only comments containing this word will trigger the DM (case-insensitive)</small>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Post Options -->

@@ -1,165 +1,131 @@
 # InstaForge - Instagram Automation Platform
 
-Production-grade Instagram automation system with web dashboard, comment automation, and advanced safety features.
+Production-grade Instagram automation system with web dashboard, comment automation, comment-to-DM funnels, and advanced safety features.
 
-## Features
+![Status](https://img.shields.io/badge/Status-Active-success)
+![Python](https://img.shields.io/badge/Python-3.8+-blue)
+![License](https://img.shields.io/badge/License-Proprietary-red)
 
-- ✅ **Automated Posting**: Post to multiple Instagram accounts simultaneously
-- ✅ **Comment Automation**: Auto-reply to comments with smart templates
-- ✅ **Web Dashboard**: Beautiful web interface for managing posts
-- ✅ **Account Isolation**: Each account treated independently
-- ✅ **Meta Graph API Integration**: Full Instagram Graph API support
-- ✅ **Cloudinary Integration**: Reliable media hosting for Instagram
-- ✅ **Safety Systems**: Rate limiting, cooldowns, health monitoring
-- ✅ **7-Day Warm-Up**: Progressive account warm-up system
-- ✅ **Proxy Support**: Per-account proxy routing
+## 🚀 Key Features
 
-## Quick Start
+### 📸 Smart Posting
+- **Multi-Format Support**: Images, Videos, and **Carousels** (2-10 items).
+- **Auto-Validation**: Frontend and backend checks for media requirements.
+- **Retry Logic**: Automatic retries with exponential backoff for reliability.
+- **Scheduling**: Plan posts for future publication (backend ready).
 
-1. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 💬 Comment-to-DM Automation (New!)
+- **Auto-DM Funnel**: Automatically send a DM when someone comments on your post.
+- **Smart Triggers**: Trigger on **any comment** or specific keywords (e.g., "PDF", "LINK").
+- **File Delivery**: Automatically send PDFs, links, or checkout pages via DM.
+- **Safety First**:
+  - One DM per user per post per day (prevents spam).
+  - Configurable daily limits and cooldowns.
+  - "Last Processed" tracking to avoid duplicates.
 
-2. **Configure Account**
-   - Edit `config/accounts.yaml` with your Instagram account details
-   - See `docs/SETUP.md` for token generation
+### 🛡️ Advanced Safety Layer
+- **Rate Limiting**: Intelligent API quota management (prevents 429 errors).
+- **Quota Protection**: Feature-gating ensures Posting has priority over Monitoring.
+- **Health Monitoring**: Real-time system status checks.
+- **Proxy Support**: Individual proxy routing per account.
 
-3. **Set Up Cloudinary** (Recommended)
-   - Run: `scripts/setup_cloudinary.ps1`
-   - Or see `docs/CLOUDINARY.md`
+### 💻 Modern Web Dashboard
+- **Clean UI**: Beautiful, responsive interface for managing your accounts.
+- **Live Logs**: Real-time system logs viewer.
+- **Config Management**: Update settings directly from the UI.
+- **Media Upload**: Direct file upload or URL support.
 
-4. **Start Server**
-   ```bash
-   python web_server.py
-   ```
+---
 
-5. **Access Dashboard**
-   - Open: http://localhost:8000
-   - Default password: `admin`
+## 🛠️ Quick Start
 
-## Project Structure
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Configure Account
+Edit `config/accounts.yaml` with your Instagram credentials:
+```yaml
+accounts:
+  - account_id: "your_id"
+    access_token: "IGAAT..."  # Your Instagram Graph API Token
+    # Enable features as needed
+    comment_to_dm:
+      enabled: true
+      trigger_keyword: "AUTO"
+```
+> See [`docs/TOKEN_GENERATION_GUIDE.md`](docs/TOKEN_GENERATION_GUIDE.md) for getting your token.
+
+### 3. Start the Server
+```bash
+python web_server.py
+```
+
+### 4. Access Dashboard
+- **URL**: [http://localhost:8000](http://localhost:8000)
+- **Login**: `admin` / `admin` (Default)
+
+---
+
+## 📂 Project Structure
 
 ```
 InstaForge/
-├── config/              # Configuration files
-│   ├── accounts.yaml   # Account credentials
-│   └── settings.yaml   # App settings
-├── src/                # Source code
-│   ├── core/          # Core systems (scheduler, policy engine)
-│   ├── features/      # Feature modules (comments, etc.)
-│   ├── safety/        # Safety layer (throttling, limits)
-│   └── ...
-├── web/               # Web dashboard
-├── scripts/           # Utility scripts
-├── docs/              # Documentation
-└── logs/              # Log files
+├── config/              # Configuration (YAML)
+│   ├── accounts.yaml    # Account credentials & feature flags
+│   └── settings.yaml    # Global app settings
+├── src/                 # Core Source Code
+│   ├── api/             # Instagram Graph API Client
+│   ├── services/        # Business Logic (Posting, Comments, Accounts)
+│   ├── features/        # Feature Modules (Comment-to-DM, Auto-Reply)
+│   └── safety/          # Rate Limiting & Safety Engines
+├── web/                 # FastAPI Web Dashboard
+│   ├── templates/       # HTML Frontend
+│   └── static/          # CSS/JS Assets
+├── scripts/             # Utility Scripts
+│   ├── stop_server.ps1  # Force stop server
+│   └── ...              # Token & Testing scripts
+└── docs/                # Comprehensive Documentation
 ```
 
-## Documentation
+---
 
-- **[Features](docs/FEATURES.md)** ⭐ Complete features list
-- **[Directory Structure](docs/DIRECTORY_STRUCTURE.md)** ⭐ Project organization
-- **[Setup Guide](docs/SETUP.md)** - Initial setup and configuration
-- **[Comment-to-DM Setup](docs/COMMENT_TO_DM_SETUP.md)** - Comment-to-DM automation
-- **[Token Guide](docs/TOKEN_GUIDE.md)** - Getting Instagram access tokens
-- **[Cloudinary Setup](docs/CLOUDINARY.md)** - Media hosting setup
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and fixes
-- **[Architecture](docs/ARCHITECTURE.md)** - System architecture
+## 📚 Documentation
 
-## Features in Detail
+- **[Features Overview](docs/FEATURES.md)** - Detailed capabilities list.
+- **[Setup Guide](docs/SETUP.md)** - Full installation instructions.
+- **[Token Generation](docs/TOKEN_GENERATION_GUIDE.md)** - How to get your `IGAAT` token.
+- **[Comment-to-DM Setup](docs/COMMENT_TO_DM_SETUP.md)** - Configuring the auto-DM funnel.
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Solutions for common errors.
+- **[System Architecture](docs/ARCHITECTURE.md)** - Technical design overview.
 
-### Comment Automation
-- Monitors posts for new comments every 60 seconds
-- Auto-replies with smart templates based on comment content
-- Prevents duplicate replies
-- Configurable reply templates
+---
 
-### Web Dashboard
-- Upload and post images/videos
-- View published posts
-- Monitor logs
-- Manage configuration
+## 🔧 Configuration Guide
 
-### Safety Features
-- Global and per-account rate limiting
-- Cooldown management
-- Daily activity limits
-- Pattern detection
-- Health monitoring
-
-## Configuration
-
-### Accounts (`config/accounts.yaml`)
+### Posting Mode (Recommended for Start)
+To prioritize posting and avoid rate limits, disable background monitoring in `config/accounts.yaml`:
 ```yaml
-accounts:
-  - account_id: "your_account_id"
-    username: "your_username"
-    access_token: "your_token"
+warming:
+  enabled: false
+comment_to_dm:
+  enabled: false
 ```
 
-### Settings (`config/settings.yaml`)
-- Rate limits
-- Warming schedule
-- Logging configuration
-
-### Environment Variables (`.env`)
-- Cloudinary credentials
-- Web server port/password
-
-## Usage
-
-### Web Interface
-1. Start server: `python web_server.py`
-2. Open browser: http://localhost:8000
-3. Log in and start posting
-
-### Programmatic Usage
-```python
-from src.app import InstaForgeApp
-
-app = InstaForgeApp()
-app.initialize()
-
-# Post an image
-from src.models.post import PostMedia
-from pydantic import HttpUrl
-
-media = PostMedia(
-    media_type="image",
-    url=HttpUrl("https://example.com/image.jpg"),
-)
-
-post = app.posting_service.create_post(
-    account_id="account_1",
-    media=media,
-    caption="Check out this amazing content!",
-)
-
-app.posting_service.publish_post_with_retry(post)
+### Auto-DM Mode
+To enable the Comment-to-DM funnel:
+```yaml
+comment_to_dm:
+  enabled: true
+  trigger_keyword: "AUTO"  # Or specific word like "SEND"
+  link_to_send: "https://your-link.com/file.pdf"
 ```
 
-## Scripts
+---
 
-Utility scripts in `scripts/` folder:
-- `generate_token.py` - Generate Instagram access tokens
-- `stop_server.ps1` - Stop all Python processes
-- `setup_cloudinary.ps1` - Set up Cloudinary credentials
-- Various test scripts for debugging
+## 🆘 Support
 
-## Requirements
-
-- Python 3.8+
-- Instagram Business/Creator account
-- Facebook App with Instagram Graph API
-- (Optional) Cloudinary account for media hosting
-
-## License
-
-Proprietary - All rights reserved
-
-## Support
-
-- Check `docs/TROUBLESHOOTING.md` for common issues
-- Review logs in `logs/instaforge.log`
-- See documentation in `docs/` folder
+- Check logs: `logs/instaforge.log` or via Dashboard > Logs.
+- Run diagnostics: `python scripts/check_token_detailed.py`.
+- Force stop server: `.\scripts\stop_server.ps1`.

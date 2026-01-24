@@ -77,6 +77,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         input.addEventListener('change', handleDmFileTypeChange);
     });
     
+    // DM trigger mode toggle
+    const dmTriggerModeInputs = document.querySelectorAll('input[name="dm_trigger_mode"]');
+    dmTriggerModeInputs.forEach(input => {
+        input.addEventListener('change', handleDmTriggerModeChange);
+    });
+    
     // DM file input handler
     const dmFileInput = document.getElementById('dmFileInput');
     if (dmFileInput) {
@@ -87,6 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     handleMediaSourceChange();
     handleMediaTypeChange();
     handleDmFileTypeChange();
+    handleDmTriggerModeChange();
     
     // Ensure hidden URL inputs never have required attribute
     // This is a safety measure to prevent browser validation errors
@@ -114,6 +121,17 @@ function handleDmFileTypeChange() {
         if (uploadSection) uploadSection.style.display = 'none';
         if (urlSection) urlSection.style.display = 'block';
         dmFileData = null; // Clear uploaded file when switching to URL
+    }
+}
+
+function handleDmTriggerModeChange() {
+    const triggerMode = document.querySelector('input[name="dm_trigger_mode"]:checked')?.value;
+    const keywordSection = document.getElementById('dmKeywordSection');
+    
+    if (triggerMode === 'KEYWORD') {
+        if (keywordSection) keywordSection.style.display = 'block';
+    } else {
+        if (keywordSection) keywordSection.style.display = 'none';
     }
 }
 
@@ -575,8 +593,19 @@ async function handleFormSubmit(e) {
         
         // Collect DM file info
         const dmFileType = document.querySelector('input[name="dm_file_type"]:checked')?.value;
-        let dmFilePath = null;
+        const dmTriggerMode = document.querySelector('input[name="dm_trigger_mode"]:checked')?.value || 'AUTO';
+        const dmTriggerWord = document.getElementById('dm_trigger_word')?.value?.trim();
+        let dmFileValue = null;
         
+        // Explicitly read manual URL input (Task 1 & 2)
+        const manualUrl = document.getElementById('dm_file_path')?.value?.trim();
+        console.log("Manual URL:", manualUrl);
+        
+        // Always assign manualUrl to dmFileValue initially if present
+        if (manualUrl) {
+            dmFileValue = manualUrl;
+        }
+
         if (dmFileType === 'upload' && dmFileData) {
             // Upload PDF file first
             showStatus('postStatus', 'Uploading DM file...', 'info');
@@ -590,21 +619,30 @@ async function handleFormSubmit(e) {
                     body: dmFormData,
                 });
                 
-                if (dmUploadResponse.ok) {
-                    const dmResult = await dmUploadResponse.json();
-                    if (dmResult.urls && dmResult.urls.length > 0) {
-                        dmFilePath = dmResult.urls[0].url;
-                    }
+                // Task 3: Handle upload failure
+                if (!dmUploadResponse.ok) {
+                    const error = await dmUploadResponse.json();
+                    throw new Error(error.detail || 'DM file upload failed');
+                }
+                
+                const dmResult = await dmUploadResponse.json();
+                console.log("Upload result:", dmResult);
+
+                if (dmResult.urls && dmResult.urls.length > 0) {
+                    dmFileValue = dmResult.urls[0].url;
                 }
             } catch (error) {
-                console.warn('DM file upload failed, will use local path if provided:', error);
-                // Continue with post creation even if DM file upload fails
+                console.error('DM file upload error:', error);
+                throw error; // Stop execution if upload fails
             }
         } else {
-            // Use file path/URL
-            const dmPathInput = document.getElementById('dm_file_path');
-            dmFilePath = dmPathInput ? dmPathInput.value.trim() : null;
+            // Use manual URL if not uploading
+            if (manualUrl) {
+                dmFileValue = manualUrl;
+            }
         }
+        
+        console.log("Final dmFileValue:", dmFileValue);
         
         // Create post request
         const postData = {
@@ -627,26 +665,47 @@ async function handleFormSubmit(e) {
         }
         
         // Attach DM file to the post if provided
-        if (dmFilePath && response.instagram_media_id) {
+        // Only proceed if we have a file/URL OR if trigger mode is explicitly KEYWORD
+        // This prevents saving config for normal posts (AUTO mode with no file)
+        const shouldSaveDmConfig = dmFileValue || dmTriggerMode === 'KEYWORD';
+
+        if (shouldSaveDmConfig && response.instagram_media_id) {
             try {
-                showStatus('postStatus', 'Attaching DM file to post...', 'info');
+                // Task 4: Validate
+                if (!dmFileValue) {
+                     throw new Error("No Auto-DM file or URL provided");
+                }
+
+                showStatus('postStatus', 'Saving Auto-DM settings...', 'info');
+
+                // Robust check: if it looks like a URL or NOT like a local path, treat as URL
+                const isUrl = dmFileValue && (dmFileValue.match(/^(http|https):\/\//i) || (!dmFileValue.match(/^[a-zA-Z]:\\/) && !dmFileValue.startsWith('/') && !dmFileValue.startsWith('\\')));
+
+                // Task 5: Build payload
+                const payload = {
+                    file_url: isUrl ? dmFileValue : null,
+                    file_path: !isUrl && dmFileValue ? dmFileValue : null,
+                    trigger_mode: dmTriggerMode,
+                    trigger_word: dmTriggerWord
+                };
+
+                // Task 6: Debug logs
+                console.log("Auto-DM payload:", payload);
+
                 await apiRequest(
                     `/comment-to-dm/post/${response.instagram_media_id}/file?account_id=${accountId}`,
                     {
                         method: 'POST',
-                        body: JSON.stringify({
-                            file_url: dmFilePath.startsWith('http://') || dmFilePath.startsWith('https://') ? dmFilePath : null,
-                            file_path: !dmFilePath.startsWith('http') ? dmFilePath : null,
-                        }),
+                        body: JSON.stringify(payload),
                     }
                 );
-                showStatus('postStatus', `Post created and DM file attached! Comments will trigger auto-DM.`, 'success');
+                showStatus('postStatus', `Post created and Auto-DM configured!`, 'success');
             } catch (error) {
-                console.error('Failed to attach DM file:', error);
-                showStatus('postStatus', `Post created successfully! (DM file attachment failed: ${error.message})`, 'warning');
+                console.error('Failed to attach DM settings:', error);
+                showStatus('postStatus', `Post created successfully! (Auto-DM config failed: ${error.message})`, 'warning');
             }
         } else {
-            if (dmFilePath) {
+            if (dmFileValue) {
                 showStatus('postStatus', `Post created! Note: DM file will be attached once post is published.`, 'info');
             } else {
                 showStatus('postStatus', `Post created successfully! Post ID: ${response.post_id}`, 'success');
@@ -673,6 +732,7 @@ async function handleFormSubmit(e) {
             if (dmFilePreview) dmFilePreview.style.display = 'none';
             handleMediaSourceChange();
             handleDmFileTypeChange();
+            handleDmTriggerModeChange();
         }, 3000);
         
     } catch (error) {

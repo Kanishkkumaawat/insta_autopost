@@ -1,0 +1,26 @@
+{
+  "1405915827600672:18094767112753326": {
+    "account_id": "1405915827600672",
+    "media_id": "18094767112753326",
+    "file_url": null,
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": ""
+  },
+  "1405915827600672:17964606291008727": {
+    "account_id": "1405915827600672",
+    "media_id": "17964606291008727",
+    "file_url": "file:///\"C:/Users/kanis/Downloads/1-1-Network-Topology-Worksheet.pdf\"",
+    "file_path": "\"C:\\Users\\kanis\\Downloads\\1-1-Network-Topology-Worksheet.pdf\"",
+    "trigger_mode": "AUTO",
+    "trigger_word": null
+  },
+  "1405915827600672:18090444838838043": {
+    "account_id": "1405915827600672",
+    "media_id": "18090444838838043",
+    "file_url": "https://resources.finalsite.net/images/v1666625721/shelton/ljugguf3qpyeil2wvbni/cats.pdf",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": ""
+  }
+}

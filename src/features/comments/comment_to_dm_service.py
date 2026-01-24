@@ -431,14 +431,37 @@ class CommentToDMService:
             )
             return result
         
-        # Check for post-specific file/link configuration
-        post_specific_file = self.post_dm_config.get_post_dm_file(account_id, media_id)
+        # Get post-specific configuration
+        post_config = self.post_dm_config.get_post_dm_config(account_id, media_id)
         
-        # Use post-specific file if available, otherwise use account-level link
-        link_to_send = post_specific_file or dm_config.get("link_to_send")
+        # Determine link to send (Post specific > Account global)
+        link_to_send = None
+        if post_config and post_config.get("file_url"):
+            link_to_send = post_config.get("file_url")
+        else:
+            link_to_send = dm_config.get("link_to_send")
         
-        # Evaluate trigger keyword
-        trigger_keyword = dm_config.get("trigger_keyword", "AUTO")
+        # Determine trigger logic (Post specific > Account global)
+        trigger_keyword = "AUTO"
+        
+        if post_config and post_config.get("trigger_mode"):
+            # Use post-specific trigger settings
+            mode = post_config.get("trigger_mode")
+            if mode == "KEYWORD":
+                trigger_keyword = post_config.get("trigger_word", "")
+            else:
+                trigger_keyword = "AUTO"
+            
+            logger.debug(
+                "Using post-specific trigger config", 
+                account_id=account_id, 
+                media_id=media_id,
+                mode=mode, 
+                keyword=trigger_keyword
+            )
+        else:
+            # Fallback to account global settings
+            trigger_keyword = dm_config.get("trigger_keyword", "AUTO")
         
         if not self._should_trigger(comment_text, trigger_keyword):
             result["reason"] = "trigger_keyword_not_matched"
