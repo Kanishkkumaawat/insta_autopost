@@ -1,3 +1,397 @@
+"""API route handlers for InstaForge web dashboard"""
+
+import json
+import yaml
+import os
+import uuid
+import shutil
+import requests
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+from fastapi import APIRouter, Request, HTTPException, Depends, status, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.concurrency import run_in_threadpool
+from pydantic import HttpUrl, BaseModel
+
+from .models import (
+    CreatePostRequest,
+    PostResponse,
+    LogEntry,
+    ConfigAccountResponse,
+    ConfigSettingsResponse,
+    StatusResponse,
+    PublishedPostResponse,
+)
+from src.models.post import PostMedia, Post, PostStatus
+from src.models.account import Account, ProxyConfig, WarmingConfig, CommentToDMConfig
+from src.app import InstaForgeApp
+from src.utils.config import config_manager, Settings
+
+
+router = APIRouter(prefix="/api", tags=["api"])
+
+# Global InstaForge app instance (set by main.py)
+_app_instance: Optional[InstaForgeApp] = None
+
+
+def set_app_instance(instance: InstaForgeApp):
+    """Set the global app instance"""
+    global _app_instance
+    _app_instance = instance
+
+
+def get_app() -> InstaForgeApp:
+    """Dependency to get InstaForge app instance"""
+    if _app_instance is None:
+        raise HTTPException(status_code=500, detail="Application not initialized")
+    return _app_instance
+
+
+# --- Account Management Endpoints ---
+
+@router.get("/config/accounts")
+async def get_accounts():
+    """List all accounts"""
+    accounts = config_manager.load_accounts()
+    return {"accounts": [acc.dict() for acc in accounts]}
+
+@router.post("/config/accounts/add")
+async def add_account(account: Account, app: InstaForgeApp = Depends(get_app)):
+    """Add a new account"""
+    try:
+        accounts = config_manager.load_accounts()
+        
+        # Check for duplicate ID
+        if any(acc.account_id == account.account_id for acc in accounts):
+            raise HTTPException(status_code=400, detail=f"Account ID {account.account_id} already exists")
+            
+        accounts.append(account)
+        config_manager.save_accounts(accounts)
+        
+        # Reload app state
+        app.accounts = accounts
+        app.account_service.update_accounts(accounts)
+        
+        return {"status": "success", "message": "Account added", "account": account.dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to add account: {str(e)}")
+
+@router.put("/config/accounts/{account_id}")
+async def update_account(account_id: str, account_update: Account, app: InstaForgeApp = Depends(get_app)):
+    """Update an existing account"""
+    try:
+        # Ensure ID matches
+        if account_id != account_update.account_id:
+            raise HTTPException(status_code=400, detail="Account ID in path must match body")
+            
+        accounts = config_manager.load_accounts()
+        
+        found = False
+        for i, acc in enumerate(accounts):
+            if acc.account_id == account_id:
+                accounts[i] = account_update
+                found = True
+                break
+        
+        if not found:
+            raise HTTPException(status_code=404, detail="Account not found")
+            
+        config_manager.save_accounts(accounts)
+        
+        # Reload app state
+        app.accounts = accounts
+        app.account_service.update_accounts(accounts)
+        
+        return {"status": "success", "message": "Account updated", "account": account_update.dict()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update account: {str(e)}")
+
+@router.delete("/config/accounts/{account_id}")
+async def delete_account(account_id: str, app: InstaForgeApp = Depends(get_app)):
+    """Delete an account"""
+    try:
+        accounts = config_manager.load_accounts()
+        
+        initial_len = len(accounts)
+        accounts = [acc for acc in accounts if acc.account_id != account_id]
+        
+        if len(accounts) == initial_len:
+            raise HTTPException(status_code=404, detail="Account not found")
+            
+        config_manager.save_accounts(accounts)
+        
+        # Reload app state
+        app.accounts = accounts
+        app.account_service.update_accounts(accounts)
+        
+        return {"status": "success", "message": "Account deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+
+# --- Global Settings Endpoints ---
+
+@router.get("/config/settings")
+async def get_settings():
+    """Get global settings"""
+    settings = config_manager.load_settings()
+    return settings.dict()
+
+@router.put("/config/settings")
+async def update_settings(settings: Settings, app: InstaForgeApp = Depends(get_app)):
+    """Update global settings"""
+    try:
+        config_manager.save_settings(settings)
+        
+        # Reload app config (partial reload)
+        app.config = settings
+        # Trigger any necessary service updates here
+        # For example, rate limiter might need update if limits changed
+        if app.rate_limiter:
+            app.rate_limiter.requests_per_hour = settings.instagram.rate_limit["requests_per_hour"]
+            app.rate_limiter.requests_per_minute = settings.instagram.rate_limit["requests_per_minute"]
+            
+        return {"status": "success", "message": "Settings updated", "settings": settings.dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
+
+
+# --- Execution Endpoints ---
+
+@router.post("/posts/create", response_model=PostResponse)
+async def create_post(request: Request, post_data: CreatePostRequest, app: InstaForgeApp = Depends(get_app)):
+    """Create a new post"""
+    try:
+        # Handle reels (treat as video)
+        media_type = "video" if post_data.media_type == "reels" else post_data.media_type
+        
+        # Build PostMedia object
+        if media_type == "carousel":
+            if len(post_data.urls) < 2:
+                raise HTTPException(status_code=400, detail=f"Carousel posts require 2-10 items. Provided: {len(post_data.urls)}")
+            if len(post_data.urls) > 10:
+                raise HTTPException(status_code=400, detail=f"Carousel posts max 10 items. Provided: {len(post_data.urls)}")
+            
+            children = []
+            for url in post_data.urls:
+                url_lower = url.lower()
+                child_type = "image"
+                if url_lower.endswith((".mp4", ".mov", ".avi", ".mkv")):
+                    child_type = "video"
+                children.append(PostMedia(media_type=child_type, url=HttpUrl(url)))
+            
+            media = PostMedia(media_type="carousel", children=children, caption=post_data.caption)
+        else:
+            if not post_data.urls or len(post_data.urls) != 1:
+                raise HTTPException(status_code=400, detail=f"{media_type.capitalize()} posts require exactly 1 URL.")
+            
+            media = PostMedia(media_type=media_type, url=HttpUrl(post_data.urls[0]), caption=post_data.caption)
+        
+        # Create post (using threadpool to avoid blocking event loop)
+        post = await run_in_threadpool(
+            app.posting_service.create_post,
+            account_id=post_data.account_id,
+            media=media,
+            caption=post_data.caption,
+            scheduled_time=post_data.scheduled_time,
+        )
+        post.hashtags = post_data.hashtags or []
+        
+        # Publish if not scheduled
+        if not post_data.scheduled_time:
+            # Localhost check
+            for url in post_data.urls:
+                if "localhost" in url or "127.0.0.1" in url or url.startswith("http://"):
+                     raise HTTPException(status_code=400, detail="Instagram requires public HTTPS URLs.")
+            
+            try:
+                # Run synchronous publish_post in threadpool to prevent blocking the event loop
+                # This is critical because publish_post makes network requests that might trigger
+                # verification callbacks to this same server (e.g., Cloudflare tunnel verification)
+                post = await run_in_threadpool(app.posting_service.publish_post, post)
+            except Exception as e:
+                # Basic error handling, service should log details
+                # Don't fail the request completely if publishing fails, but return error details
+                # This allows frontend to see specific error (like 9004) without a generic 500/400
+                post.status = "failed"
+                post.error_message = str(e)
+                # Re-raise for now to match current behavior but could be softened
+                raise HTTPException(status_code=400, detail=f"Publishing failed: {str(e)}")
+        
+        return PostResponse(
+            post_id=str(post.post_id) if post.post_id else None,
+            account_id=post.account_id,
+            media_type=media_type,
+            caption=post.caption,
+            hashtags=post.hashtags,
+            status=str(post.status),
+            instagram_media_id=str(post.instagram_media_id) if post.instagram_media_id else None,
+            published_at=post.published_at,
+            created_at=post.created_at,
+            error_message=post.error_message,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create post: {str(e)}")
+
+@router.get("/posts/published")
+async def get_published_posts(request: Request, limit: int = 20, account_id: Optional[str] = None, app: InstaForgeApp = Depends(get_app)):
+    """Fetch published posts from Instagram API"""
+    try:
+        if not account_id:
+            accounts = app.account_service.list_accounts()
+            if not accounts:
+                raise HTTPException(status_code=404, detail="No accounts configured")
+            account_id = accounts[0].account_id
+        
+        client = app.account_service.get_client(account_id)
+        media_list = await run_in_threadpool(client.get_recent_media, limit=limit)
+        
+        posts = []
+        for media in media_list:
+            posts.append(PublishedPostResponse(
+                id=media.get("id", ""),
+                media_type=media.get("media_type"),
+                caption=media.get("caption", ""),
+                permalink=media.get("permalink"),
+                timestamp=media.get("timestamp"),
+            ))
+        
+        return {"posts": posts, "count": len(posts)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch posts: {str(e)}")
+
+@router.get("/logs")
+async def get_logs(lines: int = 100, level: Optional[str] = None):
+    """Get recent log entries"""
+    # Use config setting for path if available, else default
+    settings = config_manager.load_settings()
+    log_path = Path(settings.logging.file_path)
+    
+    if not log_path.exists():
+        return {"logs": [], "count": 0}
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        
+        log_entries = []
+        for line in recent_lines:
+            try:
+                log_data = json.loads(line.strip())
+                log_level = log_data.get("level", "info").upper()
+                
+                if level and log_level != level.upper():
+                    continue
+                
+                # Extract fields based on new structured logging format
+                # Structlog JSON format usually has: timestamp, level, event/message
+                log_entries.append(LogEntry(
+                    timestamp=log_data.get("timestamp", ""),
+                    level=log_level,
+                    event=log_data.get("event", "Log"), # Event might be missing or same as message
+                    message=log_data.get("message", "") or log_data.get("event", ""),
+                    data={k: v for k, v in log_data.items() if k not in ["timestamp", "level", "event", "message"]},
+                ))
+            except json.JSONDecodeError:
+                continue
+        
+        log_entries.reverse()
+        return {"logs": log_entries, "count": len(log_entries)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
+
+
+# --- Status & Utils ---
+
+@router.get("/status", response_model=StatusResponse)
+async def get_status(app: InstaForgeApp = Depends(get_app)):
+    """Get system status"""
+    try:
+        accounts = app.account_service.list_accounts()
+        
+        account_list = []
+        warming_enabled = False
+        
+        for account in accounts:
+            is_warming = account.warming.enabled if account.warming else False
+            if is_warming:
+                warming_enabled = True
+            
+            account_list.append({
+                "account_id": account.account_id,
+                "username": account.username,
+                "warming_enabled": is_warming,
+            })
+        
+        warming_schedule = app.config.warming.schedule_time if app.config else "09:00"
+        
+        return StatusResponse(
+            app_status="running",
+            accounts=account_list,
+            warming_enabled=warming_enabled,
+            warming_schedule=warming_schedule,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+
+@router.post("/upload")
+async def upload_files(request: Request, files: List[UploadFile] = File(...)):
+    """Upload media files"""
+    try:
+        upload_dir = Path("uploads")
+        upload_dir.mkdir(exist_ok=True)
+        
+        uploaded_urls = []
+        from .cloudflare_helper import get_base_url
+        base_url = get_base_url(str(request.base_url))
+        
+        for file in files:
+            if not file.content_type or not (file.content_type.startswith("image/") or file.content_type.startswith("video/")):
+                 raise HTTPException(status_code=400, detail=f"Invalid file type: {file.content_type}")
+            
+            file_ext = Path(file.filename).suffix
+            unique_filename = f"{uuid.uuid4()}{file_ext}"
+            file_path = upload_dir / unique_filename
+            
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            file_url = f"{base_url}/uploads/{unique_filename}"
+            uploaded_urls.append({
+                "url": file_url,
+                "originalName": file.filename,
+                "size": file_path.stat().st_size,
+                "type": file.content_type,
+            })
+            
+        return {"urls": uploaded_urls, "count": len(uploaded_urls)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload: {str(e)}")
+
+@router.get("/test/verify-url")
+async def verify_url(url: str):
+    """Test URL accessibility"""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0", "Accept": "image/*,video/*"}
+        response = await run_in_threadpool(requests.head, url, headers=headers, timeout=10, allow_redirects=True)
+        return {
+            "url": url,
+            "status_code": response.status_code,
+            "content_type": response.headers.get("Content-Type"),
+            "is_valid": response.status_code == 200,
+        }
+    except Exception as e:
+        return {"url": url, "error": str(e), "is_valid": False}
 
 # --- Comment-to-DM Endpoints ---
 

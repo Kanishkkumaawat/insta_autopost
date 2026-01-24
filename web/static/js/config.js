@@ -130,17 +130,43 @@ async function saveAccount() {
         return;
     }
 
-    const accountData = {
+    // Base account object
+    let accountData = {
         account_id: accountId,
         username: username,
         access_token: token,
         warming: {
             enabled: warming,
-            daily_actions: 10, // Default
-            action_types: ["like", "comment"] // Default
+            daily_actions: 10,
+            action_types: ["like", "comment"]
         },
-        proxy: { enabled: false } // Default
+        proxy: { enabled: false }
     };
+
+    // If editing, merge with existing data to preserve fields like comment_to_dm
+    if (mode === 'edit' && window.currentEditingAccount) {
+        accountData = {
+            ...window.currentEditingAccount,
+            ...accountData,
+            // Ensure nested objects are merged carefully if needed, but top-level replacement is mostly what we do here.
+            // Exception: comment_to_dm might be in currentEditingAccount but not in the form.
+            comment_to_dm: window.currentEditingAccount.comment_to_dm || { enabled: false },
+            warming: {
+                ...window.currentEditingAccount.warming,
+                enabled: warming
+            }
+        };
+    } else {
+         // New account default config
+         accountData.comment_to_dm = { enabled: false };
+    }
+    
+    // Also capture the new DM Enabled checkbox if we add it
+    const dmEnabled = document.getElementById('acc-dm-enabled');
+    if (dmEnabled) {
+        if (!accountData.comment_to_dm) accountData.comment_to_dm = {};
+        accountData.comment_to_dm.enabled = dmEnabled.checked;
+    }
     
     try {
         const url = mode === 'add' ? '/api/config/accounts/add' : `/api/config/accounts/${accountId}`;
@@ -173,6 +199,9 @@ async function editAccount(accountId) {
         
         if (!account) return;
         
+        // Store for merging in saveAccount
+        window.currentEditingAccount = account;
+        
         showAddAccountModal();
         document.getElementById('modal-title').textContent = 'Edit Account';
         document.getElementById('acc-mode').value = 'edit';
@@ -181,6 +210,12 @@ async function editAccount(accountId) {
         document.getElementById('acc-username').value = account.username;
         document.getElementById('acc-token').value = account.access_token;
         document.getElementById('acc-warming').checked = account.warming?.enabled || false;
+        
+        // DM Enabled checkbox
+        const dmCheckbox = document.getElementById('acc-dm-enabled');
+        if (dmCheckbox) {
+            dmCheckbox.checked = account.comment_to_dm?.enabled || false;
+        }
     } catch (error) {
         console.error('Failed to load account details:', error);
     }

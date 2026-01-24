@@ -3,9 +3,11 @@ from .config import config_manager
 from .exceptions import (
     InstaForgeError,
     ConfigError,
-    APIError,
-    AuthenticationError,
+    InstagramAPIError,
     RateLimitError,
+    AccountError,
+    PostingError,
+    ProxyError,
 )
 
 __all__ = [
@@ -14,7 +16,9 @@ __all__ = [
     "config_manager",
     "InstaForgeError",
     "ConfigError",
-    "APIError",
-    "AuthenticationError",
+    "InstagramAPIError",
     "RateLimitError",
+    "AccountError",
+    "PostingError",
+    "ProxyError",
 ]

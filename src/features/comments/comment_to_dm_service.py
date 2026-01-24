@@ -327,13 +327,13 @@ class CommentToDMService:
         new_comments = []
         if last_processed_id:
             # Process comments that come after the last processed one
-            # Note: Comments are typically returned in reverse chronological order
+            # Note: Comments are typically returned in reverse chronological order (newest first)
             for comment in comments:
                 comment_id = comment.get("id")
-                if comment_id and comment_id != last_processed_id:
-                    new_comments.append(comment)
-                    if comment_id == comments[0].get("id"):  # If this is the newest, break
-                        break
+                # Stop if we reach the last processed comment
+                if comment_id == last_processed_id:
+                    break
+                new_comments.append(comment)
         else:
             # First time processing this post - process all comments
             new_comments = comments

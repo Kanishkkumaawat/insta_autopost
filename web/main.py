@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
 from .api import router as api_router
+from .cloudflare_helper import start_cloudflare, stop_cloudflare, get_cloudflare_url
 from src.app import InstaForgeApp
 
 # Add parent directory to path
@@ -181,6 +182,10 @@ async def startup_event():
     """Initialize InstaForge app on startup"""
     global instaforge_app
     try:
+        # Start Cloudflare tunnel
+        print("Starting Cloudflare tunnel...")
+        start_cloudflare(port=8000)
+        
         instaforge_app = InstaForgeApp()
         instaforge_app.initialize()
         
@@ -200,6 +205,10 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     global instaforge_app
+    
+    # Stop Cloudflare tunnel
+    stop_cloudflare()
+    
     if instaforge_app:
         # Stop comment monitoring
         if instaforge_app.comment_monitor:
