@@ -127,18 +127,19 @@ class InstaForgeApp:
             browser_wrapper=self.browser_wrapper,
         )
         
+        # Initialize comment-to-DM automation service (creates shared PostDMConfig)
+        self.comment_to_dm_service = CommentToDMService(
+            account_service=self.account_service,
+        )
+        
         # Initialize comment automation
-        # Using global settings from config
+        # Using global settings from config, sharing PostDMConfig for post-specific links
         self.comment_service = CommentService(
             account_service=self.account_service,
             auto_reply_enabled=self.config.comments.enabled,
             reply_templates=self.config.comments.templates,
             reply_delay_seconds=self.config.comments.delay_seconds,
-        )
-        
-        # Initialize comment-to-DM automation service
-        self.comment_to_dm_service = CommentToDMService(
-            account_service=self.account_service,
+            post_dm_config=self.comment_to_dm_service.post_dm_config,  # Share same config
         )
         
         self.comment_monitor = CommentMonitor(

@@ -129,49 +129,102 @@ class CommentMonitor:
                     media_caption = media.get("caption", "")
                     
                     # Always check for comments (comments_count may be inaccurate)
-                    logger.debug(
-                        "Checking comments on post",
+                    logger.info(
+                        "Processing comments for post",
                         account_id=account_id,
                         media_id=media_id,
                         comments_count=comments_count,
+                        caption_preview=media_caption[:50] if media_caption else None,
                     )
                     
                     # Get comments for processing (always try, even if count is 0)
                     comments = self.comment_service.get_comments(account_id, media_id)
                     
-                    # Process comments for auto-reply (existing functionality)
-                    results = self.comment_service.process_new_comments(
+                    logger.debug(
+                        "Retrieved comments for post",
                         account_id=account_id,
                         media_id=media_id,
+                        comment_count=len(comments),
                     )
                     
-                    if results["replied"] > 0:
-                        logger.info(
-                            "Auto-replied to comments",
-                            account_id=account_id,
-                            media_id=media_id,
-                            replied_count=results["replied"],
-                        )
+                    # Filter out own comments
+                    account = self.account_service.get_account(account_id)
+                    other_users_comments = [
+                        c for c in comments
+                        if c.get("username", "").lower() != account.username.lower()
+                    ]
                     
-                    # Process comments for comment-to-DM automation
-                    # Uses new method that tracks last processed comment ID per post
-                    if self.comment_to_dm_service:
-                        # Filter out own comments before processing
-                        account = self.account_service.get_account(account_id)
-                        other_users_comments = [
-                            c for c in comments
-                            if c.get("username", "").lower() != account.username.lower()
-                        ]
+                    # Determine which comments comment-to-DM will handle
+                    comments_for_dm = []
+                    comments_for_auto_reply = []
+                    
+                    if self.comment_to_dm_service and is_dm_enabled:
+                        # Get DM config to check trigger keyword
+                        dm_config = self.comment_to_dm_service._get_dm_config(account_id)
+                        post_config = self.comment_to_dm_service.post_dm_config.get_post_dm_config(account_id, media_id)
                         
+                        # Determine trigger (post-specific > account global)
+                        trigger_keyword = "AUTO"
+                        if post_config and post_config.get("trigger_mode") == "KEYWORD":
+                            trigger_keyword = post_config.get("trigger_word", "")
+                        elif dm_config:
+                            trigger_keyword = dm_config.get("trigger_keyword", "AUTO")
+                        
+                        # Split comments: those matching DM trigger go to DM, others to auto-reply
+                        for comment in other_users_comments:
+                            comment_text = comment.get("text", "")
+                            if self.comment_to_dm_service._should_trigger(comment_text, trigger_keyword):
+                                comments_for_dm.append(comment)
+                            else:
+                                comments_for_auto_reply.append(comment)
+                    else:
+                        # No DM automation, all comments go to auto-reply
+                        comments_for_auto_reply = other_users_comments
+                    
+                    # Process comments for comment-to-DM automation FIRST
+                    # Uses new method that tracks last processed comment ID per post
+                    dm_handled_comment_ids = set()
+                    if self.comment_to_dm_service and comments_for_dm:
                         # Process new comments (tracks last processed comment ID per post)
                         dm_results = self.comment_to_dm_service.process_new_comments_for_dm(
                             account_id=account_id,
                             media_id=media_id,
-                            comments=other_users_comments,
+                            comments=comments_for_dm,
                             post_caption=media_caption,
                         )
                         
-                        if dm_results["sent"] > 0 or dm_results["failed"] > 0:
+                        # Track which comments actually got a response (DM sent OR fallback replied)
+                        # We mark them as processed in auto-reply to prevent duplicates
+                        # Comments that were skipped for other reasons (already DM'd, safety limit, etc.) are NOT marked,
+                        # so auto-reply can still handle them
+                        if self.comment_service and (dm_results.get("sent", 0) > 0 or dm_results.get("fallback_replied", 0) > 0):
+                            # At least one comment got a response (DM or fallback reply). Mark all DM-targeted comments.
+                            # This prevents auto-reply from also replying to the same comments.
+                            if account_id not in self.comment_service.processed_comments:
+                                self.comment_service.processed_comments[account_id] = []
+                            for comment in comments_for_dm:
+                                comment_id = comment.get("id")
+                                if comment_id and comment_id not in self.comment_service.processed_comments[account_id]:
+                                    self.comment_service.processed_comments[account_id].append(comment_id)
+                                    dm_handled_comment_ids.add(comment_id)
+                    
+                    # Process comments for auto-reply (comments NOT handled by DM)
+                    # This includes: comments that don't match DM trigger, AND comments that matched trigger but DM skipped them
+                    if comments_for_auto_reply and is_auto_reply_enabled:
+                        results = self.comment_service.process_new_comments(
+                            account_id=account_id,
+                            media_id=media_id,
+                        )
+                        
+                        if results["replied"] > 0:
+                            logger.info(
+                                "Auto-replied to comments",
+                                account_id=account_id,
+                                media_id=media_id,
+                                replied_count=results["replied"],
+                            )
+                        
+                        if dm_results["sent"] > 0 or dm_results["failed"] > 0 or dm_results.get("skipped", 0) > 0:
                             logger.info(
                                 "Comment-to-DM automation completed",
                                 account_id=account_id,

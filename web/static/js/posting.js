@@ -212,6 +212,19 @@ async function submitPost() {
         }
     }
 
+    // Warn if scheduling a video via upload (Cloudflare tunnels are unreliable for videos)
+    const scheduledTime = document.getElementById('scheduled-time').value;
+    if (!postByUrl && scheduledTime && (mediaType === 'video' || mediaType === 'reels')) {
+        const proceed = confirm(
+            '⚠️ WARNING: Scheduling videos via upload may fail due to Cloudflare tunnel limitations.\n\n' +
+            'For reliable video posting, use "Post by URL" with an external host (Cloudinary, S3, etc.).\n\n' +
+            'Continue anyway?'
+        );
+        if (!proceed) {
+            return;
+        }
+    }
+
     const btn = document.getElementById('submit-btn');
     btn.disabled = true;
     btn.textContent = postByUrl ? 'Posting...' : 'Uploading media...';
@@ -249,7 +262,12 @@ async function submitPost() {
                     media_type: mediaType,
                     urls: urls,
                     caption: caption,
-                    scheduled_time: scheduledTime || null
+                    scheduled_time: scheduledTime || null,
+                    // Include Auto-DM config (will be stored with scheduled post if scheduled)
+                    auto_dm_enabled: autoDM || false,
+                    auto_dm_link: dmLink || null,
+                    auto_dm_mode: dmTrigger ? 'KEYWORD' : 'AUTO',
+                    auto_dm_trigger: dmTrigger || null
                 };
 
                 const ac = new AbortController();

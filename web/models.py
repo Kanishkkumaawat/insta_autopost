@@ -13,7 +13,9 @@ class CreatePostRequest(BaseModel):
     hashtags: List[str] = Field(default_factory=list)
     account_id: str
     scheduled_time: Optional[datetime] = None
-    # Auto-DM settings
+    # Auto-DM settings (for scheduled posts, these are stored and applied after publishing)
+    auto_dm_enabled: Optional[bool] = False
+    auto_dm_link: Optional[str] = Field(None, description="Link/file URL to send via DM")
     auto_dm_mode: Optional[str] = Field("AUTO", description="AUTO or KEYWORD")
     auto_dm_trigger: Optional[str] = Field(None, description="Trigger keyword if mode is KEYWORD")
 

@@ -8,6 +8,7 @@ from datetime import datetime
 from ...services.account_service import AccountService
 from ...utils.logger import get_logger
 from ...utils.exceptions import InstagramAPIError
+from .post_dm_config import PostDMConfig
 
 logger = get_logger(__name__)
 
@@ -20,7 +21,7 @@ class CommentService:
     - Auto-reply to comments
     - Comment monitoring
     - Template-based replies (random rotation)
-    - Keyword-based routing (optional if dict provided)
+    - Post-specific links in replies
     """
     
     def __init__(
@@ -29,6 +30,7 @@ class CommentService:
         auto_reply_enabled: bool = True,
         reply_templates: Optional[List[str]] = None,
         reply_delay_seconds: int = 30,
+        post_dm_config: Optional[PostDMConfig] = None,
     ):
         self.account_service = account_service
         self.auto_reply_enabled = auto_reply_enabled
@@ -39,6 +41,7 @@ class CommentService:
         ]
         self.reply_delay_seconds = reply_delay_seconds
         self.processed_comments: Dict[str, List[str]] = {}  # account_id -> [comment_ids]
+        self.post_dm_config = post_dm_config or PostDMConfig()  # Access to post-specific links
     
     def get_comments(self, account_id: str, media_id: str) -> List[Dict[str, Any]]:
         """
@@ -118,6 +121,7 @@ class CommentService:
         account_id: str,
         comment_id: str,
         reply_text: str,
+        media_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Reply to a comment
@@ -126,12 +130,13 @@ class CommentService:
             account_id: Account identifier
             comment_id: Comment ID to reply to
             reply_text: Reply text
+            media_id: Optional media ID for logging/verification
             
         Returns:
             Reply result
         """
         if not self.auto_reply_enabled:
-            logger.debug("Auto-reply disabled, skipping", comment_id=comment_id)
+            logger.debug("Auto-reply disabled, skipping", comment_id=comment_id, media_id=media_id)
             return {"status": "skipped", "reason": "auto_reply_disabled"}
         
         client = self.account_service.get_client(account_id)
@@ -148,7 +153,9 @@ class CommentService:
                 "Comment reply posted",
                 account_id=account_id,
                 comment_id=comment_id,
+                media_id=media_id,
                 reply_length=len(reply_text),
+                reply_preview=reply_text[:50],
             )
             
             # Track processed comment
@@ -177,27 +184,59 @@ class CommentService:
                 "comment_id": comment_id,
             }
     
-    def generate_reply(self, comment_text: str, comment_username: Optional[str] = None) -> str:
+    def generate_reply(
+        self,
+        comment_text: str,
+        comment_username: Optional[str] = None,
+        account_id: Optional[str] = None,
+        media_id: Optional[str] = None,
+    ) -> str:
         """
-        Generate a reply based on comment content (Random rotation)
+        Generate a reply based on comment content, including post-specific link if available.
         
         Args:
             comment_text: Original comment text
             comment_username: Username of commenter (optional)
+            account_id: Account identifier (for post-specific link lookup)
+            media_id: Instagram media ID (for post-specific link lookup)
             
         Returns:
-            Reply text
+            Reply text with "thank u" and link if available
         """
-        if not self.reply_templates:
-            return "Thanks! 🙏"
-            
-        template = random.choice(self.reply_templates)
+        # Get post-specific link if available
+        link_to_include = None
+        if account_id and media_id:
+            post_config = self.post_dm_config.get_post_dm_config(account_id, media_id)
+            logger.debug(
+                "Auto-reply: checking post-specific link",
+                account_id=account_id,
+                media_id=media_id,
+                has_post_config=post_config is not None,
+            )
+            if post_config and post_config.get("file_url"):
+                link = post_config.get("file_url", "").strip()
+                # Only include if it's a public URL (not file://)
+                if link and (link.startswith("http://") or link.startswith("https://")):
+                    link_to_include = link
+                    logger.debug(
+                        "Auto-reply: including post-specific link",
+                        account_id=account_id,
+                        media_id=media_id,
+                        link_preview=link[:50],
+                    )
         
-        # Personalize with username if available and template has placeholder or no mention
-        # Simple logic: if username provided, maybe prepend/append?
-        # For now, keep it simple.
-        
-        return template
+        # Build reply: "thank u" + link if available
+        if link_to_include:
+            if comment_username:
+                return f"Thank u @{comment_username}! 🙏 Here's your link: {link_to_include}"
+            else:
+                return f"Thank u! 🙏 Here's your link: {link_to_include}"
+        else:
+            # No link for this post, use template or simple "thank u"
+            if comment_username:
+                return f"Thank u @{comment_username}! 🙏"
+            else:
+                return "Thank u! 🙏"
     
     def process_new_comments(
         self,
@@ -251,14 +290,19 @@ class CommentService:
             
             results["processed"] += 1
             
-            # Generate and send reply
-            reply_text = self.generate_reply(comment_text, comment_username)
+            # Generate and send reply (include post-specific link)
+            reply_text = self.generate_reply(
+                comment_text,
+                comment_username,
+                account_id=account_id,
+                media_id=media_id,
+            )
             
             # Add delay between replies
             if processed_in_batch > 0:
                 time.sleep(self.reply_delay_seconds)
                 
-            reply_result = self.reply_to_comment(account_id, comment_id, reply_text)
+            reply_result = self.reply_to_comment(account_id, comment_id, reply_text, media_id=media_id)
             
             if reply_result.get("status") == "success":
                 results["replied"] += 1

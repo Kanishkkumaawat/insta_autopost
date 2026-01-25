@@ -25,18 +25,32 @@ def _build_post(raw: dict):
     caption = raw.get("caption") or ""
     hashtags = raw.get("hashtags") or []
 
+    def _infer_media_type(url: str) -> str:
+        """Infer media type from URL extension (handles query parameters)."""
+        # Remove query parameters and fragment for extension check
+        url_clean = url.split("?")[0].split("#")[0].lower()
+        if url_clean.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
+            return "video"
+        return "image"
+
     if media_type == "carousel":
         children = []
         for url in urls:
-            u = url.lower()
-            ct = "video" if u.endswith((".mp4", ".mov", ".avi", ".mkv")) else "image"
+            ct = _infer_media_type(url)
             children.append(PostMedia(media_type=ct, url=HttpUrl(url)))
         media = PostMedia(media_type="carousel", children=children, caption=caption)
     else:
         # Infer from URL so .mp4 stored as "image" still uses video_url (fixes timeout)
-        u = urls[0].lower()
-        inferred = "video" if u.endswith((".mp4", ".mov", ".avi", ".mkv")) else "image"
+        # This handles URLs with query parameters like ?t=timestamp
+        inferred = _infer_media_type(urls[0])
         media = PostMedia(media_type=inferred, url=HttpUrl(urls[0]), caption=caption)
+        
+        logger.debug(
+            "Scheduled post media type inferred",
+            stored_type=media_type,
+            inferred_type=inferred,
+            url_preview=urls[0][:50],
+        )
 
     post = Post(
         account_id=raw["account_id"],
@@ -58,6 +72,31 @@ def _run_once(app):
         try:
             post = _build_post(raw)
             app.posting_service.publish_post(post)
+            
+            # After successful publishing, save Auto-DM config if enabled
+            if raw.get("auto_dm_enabled") and raw.get("auto_dm_link") and post.instagram_media_id:
+                try:
+                    if app.comment_to_dm_service:
+                        app.comment_to_dm_service.post_dm_config.set_post_dm_file(
+                            account_id=raw["account_id"],
+                            media_id=str(post.instagram_media_id),
+                            file_url=raw.get("auto_dm_link"),
+                            trigger_mode=raw.get("auto_dm_mode", "AUTO"),
+                            trigger_word=raw.get("auto_dm_trigger"),
+                        )
+                        logger.info(
+                            "Auto-DM config saved for scheduled post",
+                            post_id=pid,
+                            account_id=raw["account_id"],
+                            media_id=str(post.instagram_media_id),
+                        )
+                except Exception as dm_err:
+                    logger.warning(
+                        "Failed to save Auto-DM config for scheduled post",
+                        post_id=pid,
+                        error=str(dm_err),
+                    )
+            
             mark_published(pid)
             logger.info("Scheduled post published", post_id=pid, account_id=raw["account_id"])
         except Exception as e:

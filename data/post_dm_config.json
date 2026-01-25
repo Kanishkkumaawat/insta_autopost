@@ -62,5 +62,13 @@
     "file_path": null,
     "trigger_mode": "KEYWORD",
     "trigger_word": "send"
+  },
+  "1405915827600672:17900703351362952": {
+    "account_id": "1405915827600672",
+    "media_id": "17900703351362952",
+    "file_url": "\"C:\\Users\\kanis\\Downloads\\cats.pdf\"",
+    "file_path": null,
+    "trigger_mode": "KEYWORD",
+    "trigger_word": "SENDME"
   }
 }

@@ -313,27 +313,46 @@ class InstagramClient:
             # Add more context to the error
             error_code = getattr(e, 'error_code', None)
             error_subcode = getattr(e, 'error_subcode', None)
+            error_type = type(e).__name__
+            error_message = str(e)
             
             logger.error(
                 "Failed to create media container",
-                error=str(e),
+                error=error_message,
                 error_code=error_code,
                 error_subcode=error_subcode,
                 media_url=media_url,
-                error_type=type(e).__name__,
+                error_type=error_type,
             )
             
             # If error 9004 or 2207067, provide more helpful error message
             if error_code == 9004 or error_subcode == 2207067:
+                is_video = media_url and any(ext in media_url.lower() for ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm'])
+                if is_video:
+                    solution = (
+                        "SOLUTION: Use 'Post by URL' with an external host:\n"
+                        "1) Upload video to Cloudinary (https://cloudinary.com) - recommended\n"
+                        "2) Or use AWS S3, Imgur, Firebase Storage\n"
+                        "3) Copy the direct video URL\n"
+                        "4) In InstaForge: Enable 'Post by URL' and paste the URL\n"
+                        "\n"
+                        "Cloudflare tunnels are unreliable for videos. External hosts work reliably."
+                    )
+                else:
+                    solution = (
+                        "SOLUTION: Use 'Post by URL' with Cloudinary/Imgur/S3, "
+                        "or try restarting the Cloudflare tunnel."
+                    )
                 raise InstagramAPIError(
-                    f"Instagram cannot access the media URL (error {error_code}/{error_subcode}). "
+                    f"Instagram cannot access the media URL (error {error_code}/{error_subcode}).\n"
                     f"This usually means:\n"
                     f"1) Cloudflare's trycloudflare.com is blocking Instagram's bot\n"
-                    f"2) The URL is returning HTML instead of the image\n"
-                    f"3) The server is blocking Instagram's crawler\n\n"
-                    f"Solution: Use a production static file host like AWS S3, Cloudinary, or Firebase Storage, or try restarting the Cloudflare tunnel.\n"
+                    f"2) The URL is returning HTML instead of the media file\n"
+                    f"3) The server is blocking Instagram's crawler\n"
+                    f"\n"
+                    f"{solution}\n"
                     f"URL: {media_url}\n"
-                    f"Original error: {str(e)}",
+                    f"Original error: {error_type}: {error_message} (code: {error_code})",
                     error_code=error_code,
                     error_subcode=error_subcode,
                 )

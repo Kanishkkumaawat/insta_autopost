@@ -46,6 +46,10 @@ def add_scheduled(
     caption: str,
     scheduled_time: datetime,
     hashtags: Optional[List[str]] = None,
+    auto_dm_enabled: Optional[bool] = False,
+    auto_dm_link: Optional[str] = None,
+    auto_dm_mode: Optional[str] = "AUTO",
+    auto_dm_trigger: Optional[str] = None,
 ) -> str:
     """Append a scheduled post and return its id."""
     posts = load_scheduled()
@@ -60,10 +64,20 @@ def add_scheduled(
         "scheduled_time": scheduled_time.isoformat(),
         "status": "scheduled",
         "created_at": datetime.utcnow().isoformat(),
+        # Store Auto-DM config to apply after publishing
+        "auto_dm_enabled": auto_dm_enabled or False,
+        "auto_dm_link": auto_dm_link,
+        "auto_dm_mode": auto_dm_mode or "AUTO",
+        "auto_dm_trigger": auto_dm_trigger,
     }
     posts.append(post)
     save_scheduled(posts)
-    logger.info("Scheduled post added", post_id=post_id, scheduled_time=scheduled_time.isoformat())
+    logger.info(
+        "Scheduled post added",
+        post_id=post_id,
+        scheduled_time=scheduled_time.isoformat(),
+        auto_dm_enabled=auto_dm_enabled,
+    )
     return post_id
 
 

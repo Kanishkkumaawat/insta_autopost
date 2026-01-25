@@ -29,6 +29,9 @@ from src.models.account import Account, ProxyConfig, WarmingConfig, CommentToDMC
 from src.app import InstaForgeApp
 from src.utils.config import config_manager, Settings
 from src.services.scheduled_posts_store import add_scheduled
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 router = APIRouter(prefix="/api", tags=["api"])
@@ -192,8 +195,9 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
                 raise HTTPException(status_code=400, detail=f"{media_type.capitalize()} posts require exactly 1 URL.")
             
             # Infer media_type from URL so .mp4 etc. are never sent as image (fixes Instagram timeout)
-            url0 = post_data.urls[0].lower()
-            if url0.endswith((".mp4", ".mov", ".avi", ".mkv")):
+            # Handle query parameters (e.g. ?t=timestamp) by checking URL before query
+            url0_clean = post_data.urls[0].split("?")[0].split("#")[0].lower()
+            if url0_clean.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
                 media_type = "video"
             
             media = PostMedia(media_type=media_type, url=HttpUrl(post_data.urls[0]), caption=post_data.caption)
@@ -207,6 +211,7 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
 
         if is_scheduled:
             # Persist scheduled post; publish later via background job
+            # Include Auto-DM config so it can be applied after publishing
             sid = add_scheduled(
                 account_id=post_data.account_id,
                 media_type=media_type,
@@ -214,6 +219,10 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
                 caption=post_data.caption or "",
                 scheduled_time=post_data.scheduled_time,
                 hashtags=post_data.hashtags,
+                auto_dm_enabled=post_data.auto_dm_enabled or False,
+                auto_dm_link=post_data.auto_dm_link,
+                auto_dm_mode=post_data.auto_dm_mode or "AUTO",
+                auto_dm_trigger=post_data.auto_dm_trigger,
             )
             post = await run_in_threadpool(
                 app.posting_service.create_post,
@@ -246,6 +255,29 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
         post.hashtags = post_data.hashtags or []
         try:
             post = await run_in_threadpool(app.posting_service.publish_post, post)
+            
+            # Save Auto-DM config for immediate posts (if enabled)
+            if post_data.auto_dm_enabled and post_data.auto_dm_link and post.instagram_media_id:
+                try:
+                    if app.comment_to_dm_service:
+                        app.comment_to_dm_service.post_dm_config.set_post_dm_file(
+                            account_id=post_data.account_id,
+                            media_id=str(post.instagram_media_id),
+                            file_url=post_data.auto_dm_link,
+                            trigger_mode=post_data.auto_dm_mode or "AUTO",
+                            trigger_word=post_data.auto_dm_trigger,
+                        )
+                        logger.info(
+                            "Auto-DM config saved for immediate post",
+                            account_id=post_data.account_id,
+                            media_id=str(post.instagram_media_id),
+                        )
+                except Exception as dm_err:
+                    logger.warning(
+                        "Failed to save Auto-DM config for immediate post",
+                        account_id=post_data.account_id,
+                        error=str(dm_err),
+                    )
         except Exception as e:
             post.status = PostStatus.FAILED
             post.error_message = str(e)
@@ -568,6 +600,16 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
                  raise HTTPException(status_code=404, detail="No accounts configured")
             account_id = accounts[0].account_id
             
+        # Log the save operation for debugging
+        logger.info(
+            "Saving post DM config",
+            account_id=account_id,
+            media_id=media_id,
+            file_url=file_url,
+            trigger_mode=trigger_mode,
+            trigger_word=trigger_word,
+        )
+        
         app.comment_to_dm_service.post_dm_config.set_post_dm_file(
             account_id=account_id,
             media_id=media_id,
@@ -575,6 +617,15 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
             file_url=file_url,
             trigger_mode=trigger_mode,
             trigger_word=trigger_word,
+        )
+        
+        # Verify it was saved
+        saved_config = app.comment_to_dm_service.post_dm_config.get_post_dm_config(account_id, media_id)
+        logger.info(
+            "Post DM config saved and verified",
+            account_id=account_id,
+            media_id=media_id,
+            saved_file_url=saved_config.get("file_url") if saved_config else None,
         )
         
         return {

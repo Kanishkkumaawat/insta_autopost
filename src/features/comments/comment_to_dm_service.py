@@ -18,6 +18,7 @@ from ...services.account_service import AccountService
 from ...utils.logger import get_logger
 from ...utils.exceptions import InstagramAPIError
 from .post_dm_config import PostDMConfig
+from .dm_tracking import DMTracking
 
 logger = get_logger(__name__)
 
@@ -38,6 +39,7 @@ class CommentToDMService:
     def __init__(self, account_service: AccountService):
         self.account_service = account_service
         self.post_dm_config = PostDMConfig()  # Per-post file/link configuration
+        self.dm_tracking = DMTracking()  # Persistent tracking of processed comments
         
         # Track last processed comment ID per post
         # Format: account_id -> {media_id: last_processed_comment_id}
@@ -346,6 +348,7 @@ class CommentToDMService:
             "skipped": 0,
             "failed": 0,
             "new_comments": 0,
+            "fallback_replied": 0,  # Comments that got fallback reply (DM blocked by 24h window)
         }
         
         # Check if automation is enabled
@@ -388,6 +391,19 @@ class CommentToDMService:
         
         # Process each new comment
         for comment in new_comments:
+            comment_id = comment.get("id")
+            
+            # Quick check: skip if already processed (persistent tracking prevents duplicates)
+            if comment_id and self.dm_tracking.is_comment_processed(account_id, comment_id):
+                logger.debug(
+                    "Skipping already processed comment (persistent tracking)",
+                    account_id=account_id,
+                    comment_id=comment_id,
+                    media_id=media_id,
+                )
+                results["skipped"] += 1
+                continue
+            
             result = self.process_comment_for_dm(
                 account_id=account_id,
                 comment=comment,
@@ -403,6 +419,13 @@ class CommentToDMService:
                 self._record_successful_comment(account_id, comment.get("id"), media_id)
             elif result["status"] == "failed":
                 results["failed"] += 1
+            elif result.get("reason") == "instagram_24h_messaging_window":
+                # Fallback reply was sent
+                results["fallback_replied"] += 1
+                results["skipped"] += 1  # Also count as skipped for backward compatibility
+            elif result.get("reason") == "already_processed":
+                # Already processed (from persistent tracking check inside process_comment_for_dm)
+                results["skipped"] += 1
             else:
                 results["skipped"] += 1
         
@@ -463,6 +486,19 @@ class CommentToDMService:
             comment_text_preview=comment_text[:50] if comment_text else "",
         )
         
+        # CRITICAL: Check if this comment was already processed (DM sent or fallback replied)
+        # This prevents duplicate DMs even across app restarts
+        if self.dm_tracking.is_comment_processed(account_id, comment_id):
+            result["reason"] = "already_processed"
+            logger.warning(
+                "Comment already processed - skipping to prevent duplicate DM",
+                account_id=account_id,
+                comment_id=comment_id,
+                media_id=media_id,
+                user_id=user_id,
+            )
+            return result
+        
         # Get DM configuration
         dm_config = self._get_dm_config(account_id)
         if not dm_config or not dm_config.get("enabled"):
@@ -477,12 +513,32 @@ class CommentToDMService:
         # Get post-specific configuration
         post_config = self.post_dm_config.get_post_dm_config(account_id, media_id)
         
+        logger.debug(
+            "Post DM config lookup",
+            account_id=account_id,
+            media_id=media_id,
+            has_post_config=post_config is not None,
+            post_file_url=post_config.get("file_url") if post_config else None,
+        )
+        
         # Determine link to send (Post specific > Account global)
         link_to_send = None
         if post_config and post_config.get("file_url"):
             link_to_send = post_config.get("file_url")
+            logger.debug(
+                "Using post-specific link",
+                account_id=account_id,
+                media_id=media_id,
+                link=link_to_send[:50] if link_to_send else None,
+            )
         else:
             link_to_send = dm_config.get("link_to_send")
+            logger.debug(
+                "Using account-global link",
+                account_id=account_id,
+                media_id=media_id,
+                has_link=link_to_send is not None,
+            )
         
         # Determine trigger logic (Post specific > Account global)
         trigger_keyword = "AUTO"
@@ -571,8 +627,10 @@ class CommentToDMService:
         # Check retry logic
         if not self._should_retry(account_id, comment_id):
             result["reason"] = "max_retries_exceeded"
+            # Mark as processed to prevent future attempts
+            self.dm_tracking.mark_comment_processed(account_id, comment_id)
             logger.warning(
-                "DM skipped: max retries exceeded",
+                "DM skipped: max retries exceeded - marking as processed",
                 account_id=account_id,
                 comment_id=comment_id,
                 user_id=user_id,
@@ -609,7 +667,8 @@ class CommentToDMService:
             )
             
             if dm_result.get("status") == "success":
-                # Success!
+                # Success! Mark as processed IMMEDIATELY to prevent duplicates
+                self.dm_tracking.mark_comment_processed(account_id, comment_id)
                 self._record_dm_sent(account_id)
                 self._record_user_dm_today(account_id, user_id, media_id)
                 
@@ -629,29 +688,34 @@ class CommentToDMService:
             elif dm_result.get("error_code") == 10:
                 # Instagram 24h window: user must message you first. Commenting does NOT open DMs.
                 # Fallback: reply to comment with link so user still receives it.
-                self._reply_to_comment_with_link_fallback(
+                fallback_success = self._reply_to_comment_with_link_fallback(
                     client, account_id, comment_id, link_to_send, comment_username
                 )
+                # Mark as processed IMMEDIATELY (even if fallback failed) to prevent duplicate attempts
+                self.dm_tracking.mark_comment_processed(account_id, comment_id)
                 result["status"] = "skipped"
                 result["reason"] = "instagram_24h_messaging_window"
+                # Mark as processed so we don't retry or duplicate
                 self._record_successful_comment(account_id, comment_id, media_id)
                 
                 logger.warning(
                     "DM skipped: Instagram 24-hour messaging window. User must message you first; "
-                    "commenting on a post does not open DMs. Fallback reply with link attempted.",
+                    "commenting on a post does not open DMs. Fallback reply sent.",
                     account_id=account_id,
                     comment_id=comment_id,
                     user_id=user_id,
                     media_id=media_id,
+                    fallback_sent=fallback_success,
                 )
             else:
-                # Failed - record for retry
+                # Failed - record for retry, but don't mark as processed yet
+                # (allow retry, but persistent tracking will prevent duplicates if app restarts)
                 result["status"] = "failed"
                 result["reason"] = dm_result.get("error", "unknown_error")
                 self._record_failed_attempt(account_id, comment_id)
                 
                 logger.error(
-                    "DM failed",
+                    "DM failed - will retry if within limits",
                     account_id=account_id,
                     comment_id=comment_id,
                     user_id=user_id,
@@ -659,13 +723,13 @@ class CommentToDMService:
                 )
         
         except Exception as e:
-            # Exception - record for retry
+            # Exception - record for retry, but don't mark as processed yet
             result["status"] = "failed"
             result["reason"] = str(e)
             self._record_failed_attempt(account_id, comment_id)
             
             logger.error(
-                "Exception while sending DM",
+                "Exception while sending DM - will retry if within limits",
                 account_id=account_id,
                 comment_id=comment_id,
                 user_id=user_id,
