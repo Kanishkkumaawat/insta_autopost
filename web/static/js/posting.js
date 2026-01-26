@@ -247,6 +247,7 @@ async function submitPost() {
         const autoDM = document.getElementById('auto-dm-toggle').checked;
         const dmLink = document.getElementById('dm-link').value;
         const dmTrigger = document.getElementById('dm-trigger').value;
+        const aiReplies = document.getElementById('auto-dm-ai-toggle')?.checked ?? false;
 
         // 3. Post for each account
         btn.textContent = 'Posting...';
@@ -267,7 +268,8 @@ async function submitPost() {
                     auto_dm_enabled: autoDM || false,
                     auto_dm_link: dmLink || null,
                     auto_dm_mode: dmTrigger ? 'KEYWORD' : 'AUTO',
-                    auto_dm_trigger: dmTrigger || null
+                    auto_dm_trigger: dmTrigger || null,
+                    auto_dm_ai_enabled: aiReplies || false
                 };
 
                 const ac = new AbortController();
@@ -305,7 +307,8 @@ async function submitPost() {
                         body: JSON.stringify({
                             file_url: dmLink,
                             trigger_mode: dmTrigger ? 'KEYWORD' : 'AUTO',
-                            trigger_word: dmTrigger || 'AUTO'
+                            trigger_word: dmTrigger || 'AUTO',
+                            ai_enabled: aiReplies || false
                         })
                     });
                 }

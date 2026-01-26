@@ -8,10 +8,10 @@ import shutil
 import requests
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request, HTTPException, Depends, status, UploadFile, File
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, HTMLResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import HttpUrl, BaseModel
 
@@ -30,11 +30,22 @@ from src.app import InstaForgeApp
 from src.utils.config import config_manager, Settings
 from src.services.scheduled_posts_store import add_scheduled
 from src.utils.logger import get_logger
+from src.auth.meta_oauth import get_meta_login_url, META_APP_ID, META_APP_SECRET, META_REDIRECT_URI
+from src.auth.oauth_helper import OAuthHelper
+
+try:
+    from .cloudflare_helper import get_cloudflare_url
+except ImportError:
+    get_cloudflare_url = lambda: None
 
 logger = get_logger(__name__)
 
+# In-memory store for Meta OAuth tokens (temporary)
+_meta_token_store: Dict[str, Any] = {}
+
 
 router = APIRouter(prefix="/api", tags=["api"])
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Global InstaForge app instance (set by main.py)
 _app_instance: Optional[InstaForgeApp] = None
@@ -51,6 +62,221 @@ def get_app() -> InstaForgeApp:
     if _app_instance is None:
         raise HTTPException(status_code=500, detail="Application not initialized")
     return _app_instance
+
+
+def _fetch_instagram_business_account(user_token: str) -> tuple:
+    """
+    Call /me/accounts (fields=id,name,access_token,instagram_business_account), get first Page ID
+    and page access_token, then /{page_id}?fields=instagram_business_account.
+    Returns (page_id, instagram_business_account_id, page_access_token). Raises ValueError if not found.
+    Uses Graph API v18.0.
+    """
+    base = "https://graph.facebook.com/v18.0"
+    r = requests.get(
+        f"{base}/me/accounts",
+        params={
+            "access_token": user_token,
+            "fields": "id,name,access_token,instagram_business_account",
+        },
+        timeout=30,
+    )
+    data = r.json()
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise ValueError(f"Failed to load Facebook Pages: {msg}")
+    pages = data.get("data", [])
+    if not pages:
+        raise ValueError("No Facebook Pages found. Create and connect a Page first.")
+    first = pages[0]
+    page_id = first["id"]
+    page_access_token = first.get("access_token")
+    if not page_access_token:
+        raise ValueError("Page access token not returned.")
+
+    r2 = requests.get(
+        f"{base}/{page_id}",
+        params={"fields": "instagram_business_account", "access_token": user_token},
+        timeout=30,
+    )
+    data2 = r2.json()
+    if "error" in data2:
+        err = data2["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise ValueError(f"Failed to load Page details: {msg}")
+    ig = data2.get("instagram_business_account")
+    if not ig or not ig.get("id"):
+        raise ValueError(
+            "No Instagram Business account linked to this Page. "
+            "Connect an Instagram account to your Page in Meta Business Suite."
+        )
+    return (page_id, ig["id"], page_access_token)
+
+
+def _fetch_instagram_username(ig_account_id: str, page_access_token: str) -> str:
+    """Fetch username from Instagram Graph API. Returns username or fallback."""
+    url = f"https://graph.instagram.com/v18.0/{ig_account_id}"
+    r = requests.get(
+        url,
+        params={"fields": "username", "access_token": page_access_token},
+        timeout=30,
+    )
+    data = r.json()
+    if "error" in data or "username" not in data:
+        return f"oauth_{ig_account_id}"
+    return data["username"]
+
+
+# --- Meta OAuth ---
+
+def _resolve_redirect_uri() -> str:
+    """Use META_REDIRECT_URI when set to a custom URL (e.g. ngrok); else Cloudflare tunnel; else env default."""
+    uri = (META_REDIRECT_URI or "").strip()
+    if uri and "localhost" not in uri and "127.0.0.1" not in uri:
+        return uri
+    base = (get_cloudflare_url() or "").strip().rstrip("/")
+    if base:
+        return f"{base}/auth/meta/callback"
+    return uri or "http://localhost:8000/auth/meta/callback"
+
+
+@auth_router.get("/meta/redirect-uri")
+async def auth_meta_redirect_uri():
+    """Return the OAuth redirect URI (tunnel or META_REDIRECT_URI). Use this in Meta App settings."""
+    return {"redirect_uri": _resolve_redirect_uri()}
+
+
+@auth_router.get("/meta/login")
+async def auth_meta_login():
+    """Redirect to Meta OAuth login URL. Uses tunnel or META_REDIRECT_URI."""
+    try:
+        redirect_uri = _resolve_redirect_uri()
+        url = get_meta_login_url(redirect_uri=redirect_uri)
+        return RedirectResponse(url=url, status_code=302)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@auth_router.get("/meta/callback")
+async def auth_meta_callback(request: Request):
+    """
+    Meta OAuth callback: read code, exchange for short-lived token,
+    exchange for long-lived token, store in memory. Uses Graph API v18.0.
+    """
+    code = request.query_params.get("code")
+    error = request.query_params.get("error")
+    error_description = request.query_params.get("error_description", "")
+
+    if error:
+        logger.warning("Meta OAuth callback error", error=error, error_description=error_description)
+        return HTMLResponse(
+            content=f"<html><body><h1>OAuth Error</h1><p>{error}: {error_description}</p></body></html>",
+            status_code=400,
+        )
+
+    if not code:
+        logger.warning("Meta OAuth callback missing code", query=dict(request.query_params))
+        return HTMLResponse(
+            content="<html><body><h1>Error</h1><p>No code or error received.</p></body></html>",
+            status_code=400,
+        )
+
+    if not META_APP_ID or not META_APP_SECRET:
+        logger.error("Meta OAuth callback: META_APP_ID or META_APP_SECRET not set")
+        raise HTTPException(status_code=500, detail="OAuth not configured (missing app credentials)")
+
+    redirect_uri = str(request.url).split("?")[0]
+    helper = OAuthHelper(
+        app_id=META_APP_ID,
+        app_secret=META_APP_SECRET,
+        redirect_uri=redirect_uri,
+        api_version="v18.0",
+    )
+
+    try:
+        logger.info("Meta OAuth callback: exchanging code for short-lived token")
+        short_lived = await run_in_threadpool(helper.exchange_code_for_token, code)
+        access_token_short = short_lived.get("access_token")
+        if not access_token_short:
+            raise ValueError("Short-lived response missing access_token")
+        logger.info("Meta OAuth: short-lived token obtained", expires_in=short_lived.get("expires_in"))
+
+        logger.info("Meta OAuth: exchanging short-lived for long-lived token")
+        long_lived = await run_in_threadpool(helper.exchange_for_long_lived_token, access_token_short)
+        access_token_long = long_lived.get("access_token")
+        expires_in = long_lived.get("expires_in")
+        if not access_token_long:
+            raise ValueError("Long-lived response missing access_token")
+        logger.info("Meta OAuth: long-lived token obtained", expires_in=expires_in)
+
+        logger.info("Meta OAuth: fetching /me/accounts and Instagram Business account")
+        try:
+            page_id, ig_account_id, page_access_token = await run_in_threadpool(
+                _fetch_instagram_business_account, access_token_long
+            )
+        except ValueError as e:
+            logger.warning("Meta OAuth: no connected Instagram account", error=str(e))
+            return HTMLResponse(
+                content=f"<html><body><h1>Instagram Not Connected</h1><p>{e}</p></body></html>",
+                status_code=400,
+            )
+        logger.info(
+            "Meta OAuth: connected Instagram account",
+            page_id=page_id,
+            instagram_business_account_id=ig_account_id,
+        )
+
+        username = await run_in_threadpool(
+            _fetch_instagram_username, ig_account_id, page_access_token
+        )
+        logger.info("Meta OAuth: fetched username", username=username)
+
+        sec = int(expires_in or 0)
+        expires_at = (datetime.utcnow() + timedelta(seconds=sec)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        oauth_account = Account(
+            account_id=ig_account_id,
+            username=username,
+            access_token=page_access_token,
+            expires_at=expires_at,
+            instagram_business_id=ig_account_id,
+            page_id=page_id,
+            user_access_token=access_token_long,
+            proxy=ProxyConfig(),
+            warming=WarmingConfig(),
+            comment_to_dm=CommentToDMConfig(),
+        )
+
+        accounts = config_manager.load_accounts()
+        seen = {a.account_id for a in accounts}
+        if oauth_account.account_id in seen:
+            accounts = [a for a in accounts if a.account_id != oauth_account.account_id]
+        accounts.append(oauth_account)
+        config_manager.save_accounts(accounts)
+        logger.info(
+            "Meta OAuth: persisted account to accounts.yaml",
+            account_id=oauth_account.account_id,
+            page_id=page_id,
+            instagram_business_id=ig_account_id,
+        )
+
+        app = get_app()
+        app.accounts = accounts
+        app.account_service.update_accounts(accounts)
+
+        _meta_token_store.clear()
+        _meta_token_store.update({
+            "access_token": page_access_token,
+            "expires_in": expires_in,
+            "token_type": long_lived.get("token_type", "unknown"),
+            "obtained_at": datetime.utcnow().isoformat() + "Z",
+        })
+        logger.info("Meta OAuth: token stored in memory", expires_in=expires_in)
+
+        return RedirectResponse(url="/", status_code=302)
+    except Exception as e:
+        logger.exception("Meta OAuth callback: token exchange failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Token exchange failed: {str(e)}")
 
 
 # --- Account Management Endpoints ---
@@ -223,6 +449,7 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
                 auto_dm_link=post_data.auto_dm_link,
                 auto_dm_mode=post_data.auto_dm_mode or "AUTO",
                 auto_dm_trigger=post_data.auto_dm_trigger,
+                auto_dm_ai_enabled=post_data.auto_dm_ai_enabled or False,
             )
             post = await run_in_threadpool(
                 app.posting_service.create_post,
@@ -266,6 +493,7 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
                             file_url=post_data.auto_dm_link,
                             trigger_mode=post_data.auto_dm_mode or "AUTO",
                             trigger_word=post_data.auto_dm_trigger,
+                            ai_enabled=post_data.auto_dm_ai_enabled or False,
                         )
                         logger.info(
                             "Auto-DM config saved for immediate post",
@@ -587,20 +815,20 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
         file_url = body.get("file_url")
         trigger_mode = body.get("trigger_mode", "AUTO")
         trigger_word = body.get("trigger_word")
-        
+        ai_enabled = body.get("ai_enabled", False)
+
         if not file_url and not file_path:
-             raise HTTPException(status_code=400, detail="File URL or path required")
-             
+            raise HTTPException(status_code=400, detail="File URL or path required")
+
         if not app.comment_to_dm_service:
             raise HTTPException(status_code=500, detail="Service not initialized")
 
         if not account_id:
             accounts = app.account_service.list_accounts()
             if not accounts:
-                 raise HTTPException(status_code=404, detail="No accounts configured")
+                raise HTTPException(status_code=404, detail="No accounts configured")
             account_id = accounts[0].account_id
-            
-        # Log the save operation for debugging
+
         logger.info(
             "Saving post DM config",
             account_id=account_id,
@@ -608,8 +836,9 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
             file_url=file_url,
             trigger_mode=trigger_mode,
             trigger_word=trigger_word,
+            ai_enabled=ai_enabled,
         )
-        
+
         app.comment_to_dm_service.post_dm_config.set_post_dm_file(
             account_id=account_id,
             media_id=media_id,
@@ -617,9 +846,9 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
             file_url=file_url,
             trigger_mode=trigger_mode,
             trigger_word=trigger_word,
+            ai_enabled=ai_enabled,
         )
-        
-        # Verify it was saved
+
         saved_config = app.comment_to_dm_service.post_dm_config.get_post_dm_config(account_id, media_id)
         logger.info(
             "Post DM config saved and verified",
@@ -627,7 +856,7 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
             media_id=media_id,
             saved_file_url=saved_config.get("file_url") if saved_config else None,
         )
-        
+
         return {
             "status": "success",
             "account_id": account_id,
@@ -635,6 +864,7 @@ async def set_post_dm_file(request: Request, media_id: str, account_id: Optional
             "file_url": file_url or file_path,
             "trigger_mode": trigger_mode,
             "trigger_word": trigger_word,
+            "ai_enabled": saved_config.get("ai_enabled", False) if saved_config else ai_enabled,
         }
     except HTTPException:
         raise
@@ -666,6 +896,7 @@ async def get_post_dm_file(media_id: str, account_id: Optional[str] = None, app:
                 "file_url": config.get("file_url"),
                 "trigger_mode": config.get("trigger_mode", "AUTO"),
                 "trigger_word": config.get("trigger_word"),
+                "ai_enabled": config.get("ai_enabled", False),
                 "has_config": True,
             }
         return {"account_id": account_id, "media_id": media_id, "has_config": False}

@@ -83,6 +83,7 @@ def _run_once(app):
                             file_url=raw.get("auto_dm_link"),
                             trigger_mode=raw.get("auto_dm_mode", "AUTO"),
                             trigger_word=raw.get("auto_dm_trigger"),
+                            ai_enabled=raw.get("auto_dm_ai_enabled", False),
                         )
                         logger.info(
                             "Auto-DM config saved for scheduled post",

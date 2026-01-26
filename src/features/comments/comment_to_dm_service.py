@@ -17,6 +17,7 @@ from collections import defaultdict
 from ...services.account_service import AccountService
 from ...utils.logger import get_logger
 from ...utils.exceptions import InstagramAPIError
+from ...ai.ai_reply_service import AIReplyService, FALLBACK_REPLY
 from .post_dm_config import PostDMConfig
 from .dm_tracking import DMTracking
 
@@ -40,6 +41,7 @@ class CommentToDMService:
         self.account_service = account_service
         self.post_dm_config = PostDMConfig()  # Per-post file/link configuration
         self.dm_tracking = DMTracking()  # Persistent tracking of processed comments
+        self.ai_reply_service = AIReplyService()
         
         # Track last processed comment ID per post
         # Format: account_id -> {media_id: last_processed_comment_id}
@@ -290,25 +292,30 @@ class CommentToDMService:
         comment_id: str,
         link_to_send: Optional[str],
         comment_username: Optional[str],
+        dm_message: Optional[str] = None,
     ) -> bool:
         """
-        When DM fails due to 24h window (code 10), reply to the comment with the link
-        so the user still receives it. Returns True if reply succeeded.
+        When DM fails due to 24h window (code 10), reply to the comment so the user
+        still receives a response. Uses dm_message (AI or template) when provided;
+        otherwise uses link-based fallback text.
         """
-        link = (link_to_send or "").strip()
-        is_public_url = link.startswith("http://") or link.startswith("https://")
-        name = comment_username or "there"
-        if is_public_url:
-            msg = f"Hey {name}! 👋 Instagram doesn't allow DMs unless you've messaged us first. Here's your link: {link}"
-        else:
-            msg = f"Hey {name}! 👋 Message us first (DM) so we can send you the link – Instagram restricts automated DMs."
+        msg = (dm_message or "").strip()
+        if not msg:
+            link = (link_to_send or "").strip()
+            is_public_url = link.startswith("http://") or link.startswith("https://")
+            name = comment_username or "there"
+            if is_public_url:
+                msg = f"Hey {name}! 👋 Instagram doesn't allow DMs unless you've messaged us first. Here's your link: {link}"
+            else:
+                msg = f"Hey {name}! 👋 Message us first (DM) so we can send you the link – Instagram restricts automated DMs."
         try:
-            client._make_request("POST", f"{comment_id}/replies", data={"message": msg})
+            # Instagram replies API expects message as query param, not JSON body
+            client._make_request("POST", f"{comment_id}/replies", params={"message": msg})
             logger.info(
                 "Fallback reply posted (DM blocked by 24h window)",
                 account_id=account_id,
                 comment_id=comment_id,
-                has_link=is_public_url,
+                used_dm_message=bool(dm_message and dm_message.strip()),
             )
             return True
         except Exception as e:
@@ -513,12 +520,13 @@ class CommentToDMService:
         # Get post-specific configuration
         post_config = self.post_dm_config.get_post_dm_config(account_id, media_id)
         
-        logger.debug(
+        logger.info(
             "Post DM config lookup",
             account_id=account_id,
             media_id=media_id,
             has_post_config=post_config is not None,
             post_file_url=post_config.get("file_url") if post_config else None,
+            ai_enabled=post_config.get("ai_enabled", False) if post_config else False,
         )
         
         # Determine link to send (Post specific > Account global)
@@ -639,15 +647,35 @@ class CommentToDMService:
         
         # Get client and send DM
         client = self.account_service.get_client(account_id)
-        
-        # Generate DM message
-        dm_message = self._generate_dm_message(
-            template=dm_config.get("dm_message_template"),
-            link=link_to_send,
-            comment_username=comment_username,
-            post_caption=media_caption,
-        )
-        
+
+        # Generate DM message: use AI when ai_enabled, else template/default
+        ai_enabled = post_config.get("ai_enabled", False) if post_config else False
+        if ai_enabled:
+            acc = self.account_service.get_account(account_id)
+            account_username = (acc.username if acc else None) or "we"
+            ai_message = self.ai_reply_service.generate_reply(
+                user_message=comment_text or "",
+                post_context=media_caption or "",
+                account_username=account_username,
+                link=link_to_send,
+            )
+            if ai_message and ai_message.strip() != FALLBACK_REPLY:
+                dm_message = ai_message.strip()
+            else:
+                dm_message = self._generate_dm_message(
+                    template=dm_config.get("dm_message_template"),
+                    link=link_to_send,
+                    comment_username=comment_username,
+                    post_caption=media_caption,
+                )
+        else:
+            dm_message = self._generate_dm_message(
+                template=dm_config.get("dm_message_template"),
+                link=link_to_send,
+                comment_username=comment_username,
+                post_caption=media_caption,
+            )
+
         logger.info(
             "Sending DM",
             account_id=account_id,
@@ -656,6 +684,7 @@ class CommentToDMService:
             media_id=media_id,
             trigger_type=result["trigger_type"],
             message_preview=dm_message[:50],
+            ai_used=ai_enabled,
         )
         
         # Send DM with retry logic
@@ -687,9 +716,9 @@ class CommentToDMService:
                 )
             elif dm_result.get("error_code") == 10:
                 # Instagram 24h window: user must message you first. Commenting does NOT open DMs.
-                # Fallback: reply to comment with link so user still receives it.
+                # Fallback: reply to comment with dm_message (AI/template) or link-based text.
                 fallback_success = self._reply_to_comment_with_link_fallback(
-                    client, account_id, comment_id, link_to_send, comment_username
+                    client, account_id, comment_id, link_to_send, comment_username, dm_message=dm_message
                 )
                 # Mark as processed IMMEDIATELY (even if fallback failed) to prevent duplicate attempts
                 self.dm_tracking.mark_comment_processed(account_id, comment_id)

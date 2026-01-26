@@ -10,6 +10,9 @@
         <div id="account-selector" class="grid grid-3">
             <div class="text-muted">Loading accounts...</div>
         </div>
+        <div style="margin-top: 0.5rem;">
+            <a href="/auth/meta/login" class="btn btn-secondary" style="text-decoration: none;">Connect with Meta</a>
+        </div>
     </div>
 
     <div class="form-group">
@@ -81,6 +84,13 @@
                 <label class="form-label text-sm">Trigger Keyword (Optional)</label>
                 <input type="text" id="dm-trigger" class="form-control" placeholder="e.g. SENDME">
                 <div class="text-sm text-muted">Leave empty to reply to ANY comment (default: AUTO)</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label text-sm flex items-center gap-2" style="cursor: pointer;">
+                    <input type="checkbox" id="auto-dm-ai-toggle">
+                    Use AI Replies
+                </label>
+                <div class="text-sm text-muted">Generate DM text with AI (default: off)</div>
             </div>
         </div>
     </div>

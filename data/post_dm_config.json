@@ -70,5 +70,50 @@
     "file_path": null,
     "trigger_mode": "KEYWORD",
     "trigger_word": "SENDME"
+  },
+  "1405915827600672:18084736790165015": {
+    "account_id": "1405915827600672",
+    "media_id": "18084736790165015",
+    "file_url": "file:///C:/Users/kanis/Downloads/cats.pdf",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": "AUTO",
+    "ai_enabled": true
+  },
+  "1405915827600672:17955729162051783": {
+    "account_id": "1405915827600672",
+    "media_id": "17955729162051783",
+    "file_url": "file:///C:/Users/kanis/Downloads/cats.pdf",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": "AUTO",
+    "ai_enabled": true
+  },
+  "1405915827600672:18094795850500185": {
+    "account_id": "1405915827600672",
+    "media_id": "18094795850500185",
+    "file_url": "https://app.manychat.com/fb4239648/dashboard",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": "AUTO",
+    "ai_enabled": true
+  },
+  "1405915827600672:18405601066124526": {
+    "account_id": "1405915827600672",
+    "media_id": "18405601066124526",
+    "file_url": "https://cdnbbsr.s3waas.gov.in/s3ec0175b9b6dc7fe44437c6e0a69fd863/uploads/2023/02/2023022493.pdf",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": "AUTO",
+    "ai_enabled": true
+  },
+  "1405915827600672:18080616547992928": {
+    "account_id": "1405915827600672",
+    "media_id": "18080616547992928",
+    "file_url": "https://app.manychat.com/fb4239648/dashboard",
+    "file_path": null,
+    "trigger_mode": "AUTO",
+    "trigger_word": "AUTO",
+    "ai_enabled": true
   }
 }

@@ -31,6 +31,5 @@ proxies:
   webhooks: null
 comments:
   enabled: true
-  templates:
-  - heyy, here's the link https://www.1024tera.com/sharing/link?surl=KBshGaG48qQ8ILoIJLdWwQ
+  templates: []
   delay_seconds: 3

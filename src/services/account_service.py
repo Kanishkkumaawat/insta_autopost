@@ -143,6 +143,13 @@ class AccountService:
     def list_accounts(self) -> List[Account]:
         """List all configured accounts"""
         return list(self.accounts.values())
+
+    def update_accounts(self, accounts: List[Account]) -> None:
+        """Replace accounts and re-initialize clients (e.g. after add/update/delete or OAuth persist)."""
+        self.accounts = {acc.account_id: acc for acc in accounts}
+        self.clients.clear()
+        self.posting_clients.clear()
+        self._initialize_clients()
     
     def verify_account(self, account_id: str, instagram_account_id: Optional[str] = None) -> Dict[str, any]:
         """

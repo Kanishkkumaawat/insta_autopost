@@ -184,6 +184,7 @@ class CommentMonitor:
                     # Process comments for comment-to-DM automation FIRST
                     # Uses new method that tracks last processed comment ID per post
                     dm_handled_comment_ids = set()
+                    dm_results = {"processed": 0, "sent": 0, "skipped": 0, "failed": 0, "new_comments": 0, "fallback_replied": 0}
                     if self.comment_to_dm_service and comments_for_dm:
                         # Process new comments (tracks last processed comment ID per post)
                         dm_results = self.comment_to_dm_service.process_new_comments_for_dm(
@@ -207,6 +208,19 @@ class CommentMonitor:
                                 if comment_id and comment_id not in self.comment_service.processed_comments[account_id]:
                                     self.comment_service.processed_comments[account_id].append(comment_id)
                                     dm_handled_comment_ids.add(comment_id)
+                        
+                        # Log DM results
+                        if dm_results.get("sent", 0) > 0 or dm_results.get("failed", 0) > 0 or dm_results.get("skipped", 0) > 0 or dm_results.get("fallback_replied", 0) > 0:
+                            logger.info(
+                                "Comment-to-DM automation completed",
+                                account_id=account_id,
+                                media_id=media_id,
+                                new_comments=dm_results.get("new_comments", 0),
+                                dms_sent=dm_results.get("sent", 0),
+                                skipped=dm_results.get("skipped", 0),
+                                failed=dm_results.get("failed", 0),
+                                fallback_replied=dm_results.get("fallback_replied", 0),
+                            )
                     
                     # Process comments for auto-reply (comments NOT handled by DM)
                     # This includes: comments that don't match DM trigger, AND comments that matched trigger but DM skipped them
@@ -222,17 +236,6 @@ class CommentMonitor:
                                 account_id=account_id,
                                 media_id=media_id,
                                 replied_count=results["replied"],
-                            )
-                        
-                        if dm_results["sent"] > 0 or dm_results["failed"] > 0 or dm_results.get("skipped", 0) > 0:
-                            logger.info(
-                                "Comment-to-DM automation completed",
-                                account_id=account_id,
-                                media_id=media_id,
-                                new_comments=dm_results.get("new_comments", 0),
-                                dms_sent=dm_results["sent"],
-                                skipped=dm_results["skipped"],
-                                failed=dm_results["failed"],
                             )
                 
                 # Wait for next check interval

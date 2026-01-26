@@ -142,11 +142,11 @@ class CommentService:
         client = self.account_service.get_client(account_id)
         
         try:
-            # Reply to comment using Instagram Graph API
+            # Reply to comment; Instagram API expects message as query param
             result = client._make_request(
                 "POST",
                 f"{comment_id}/replies",
-                data={"message": reply_text},
+                params={"message": reply_text},
             )
             
             logger.info(

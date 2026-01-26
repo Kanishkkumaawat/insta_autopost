@@ -12,10 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, PlainTextResponse
 from jinja2 import Environment, FileSystemLoader
 
-from .api import router as api_router
+from .api import router as api_router, auth_router
 from .cloudflare_helper import start_cloudflare, stop_cloudflare, get_cloudflare_url
+from .instagram_webhook import process_webhook_payload
 from .scheduled_publisher import start_scheduled_publisher, stop_scheduled_publisher
 from src.app import InstaForgeApp
+from src.services.token_refresher import start_daily_token_refresh_job, stop_daily_token_refresh_job
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -175,6 +177,7 @@ def render_template(template_name: str, context: dict):
 
 # Include API router
 app.include_router(api_router)
+app.include_router(auth_router)
 
 # --- Instagram webhook (for Meta app verification & development) ---
 WEBHOOK_VERIFY_TOKEN = os.environ.get("WEBHOOK_VERIFY_TOKEN", "my_test_token_for_instagram_verification")
@@ -196,13 +199,16 @@ async def webhook_instagram_verify(request: Request):
 
 @app.post("/webhooks/instagram")
 async def webhook_instagram_events(request: Request):
-    """Receive Instagram webhook events from Meta. Log and return 200."""
+    """Webhook verification (GET) is separate. POST: receive events, log payloads, forward comments/messages."""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
-    # Log for development; optionally process object, entry, etc.
-    print(f"Instagram webhook: {body}")
+    try:
+        process_webhook_payload(body, instaforge_app)
+    except Exception as e:
+        from src.utils.logger import get_logger
+        get_logger(__name__).exception("Instagram webhook processing error", error=str(e))
     return {"status": "ok"}
 
 # Global InstaForge app instance
@@ -231,6 +237,8 @@ async def startup_event():
         set_app_instance(instaforge_app)
         # Start background loop to publish scheduled posts when due
         start_scheduled_publisher(instaforge_app, interval_seconds=60)
+        # Daily token refresh for OAuth accounts (tokens older than 40 days)
+        start_daily_token_refresh_job(instaforge_app, interval_seconds=86400)
     except Exception as e:
         print(f"Warning: Failed to initialize InstaForge app: {e}")
 
@@ -245,6 +253,7 @@ async def shutdown_event():
     
     if instaforge_app:
         stop_scheduled_publisher()
+        stop_daily_token_refresh_job()
         if instaforge_app.comment_monitor:
             instaforge_app.comment_monitor.stop_monitoring_all_accounts()
         instaforge_app.shutdown()

@@ -56,11 +56,16 @@ class Account(BaseModel):
     account_id: str
     username: str
     access_token: str
-    basic_display_token: Optional[str] = None # Secondary token for basic display features
+    basic_display_token: Optional[str] = None  # Secondary token for basic display features
     password: Optional[str] = None  # For browser automation login
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     warming: WarmingConfig = Field(default_factory=WarmingConfig)
     comment_to_dm: Optional[CommentToDMConfig] = None  # Comment-to-DM automation config
-    
+    # OAuth-connected account fields (optional; manual tokens omit these)
+    expires_at: Optional[str] = None
+    instagram_business_id: Optional[str] = None
+    page_id: Optional[str] = None
+    user_access_token: Optional[str] = None  # User token for fb_exchange_token refresh
+
     class Config:
         frozen = True  # Immutable for thread safety

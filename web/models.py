@@ -18,6 +18,7 @@ class CreatePostRequest(BaseModel):
     auto_dm_link: Optional[str] = Field(None, description="Link/file URL to send via DM")
     auto_dm_mode: Optional[str] = Field("AUTO", description="AUTO or KEYWORD")
     auto_dm_trigger: Optional[str] = Field(None, description="Trigger keyword if mode is KEYWORD")
+    auto_dm_ai_enabled: Optional[bool] = Field(False, description="Use AI for reply text; stored in post DM config as ai_enabled")
 
 
 class PostResponse(BaseModel):
