@@ -18,9 +18,12 @@ from .instagram_webhook import process_webhook_payload
 from .scheduled_publisher import start_scheduled_publisher, stop_scheduled_publisher
 from src.app import InstaForgeApp
 from src.services.token_refresher import start_daily_token_refresh_job, stop_daily_token_refresh_job
+from src.utils.logger import get_logger
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logger = get_logger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -107,11 +110,12 @@ async def serve_upload_file(filename: str, request: Request):
         raise HTTPException(status_code=403, detail="Invalid file path")
     
     if not file_path.exists() or not file_path.is_file():
+        user_agent = request.headers.get("User-Agent", "Unknown")[:100]
         logger.warning(
             "File not found for upload request",
             filename=filename,
             file_path=str(file_path),
-            user_agent=request.headers.get("User-Agent", "Unknown")[:100],
+            user_agent=user_agent,
         )
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     
