@@ -29,10 +29,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS middleware
+# CORS middleware - configurable for production
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=CORS_ORIGINS if ENVIRONMENT == "production" else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -115,9 +118,11 @@ async def serve_upload_file(filename: str, request: Request):
         if not content_type:
             content_type = "application/octet-stream"
     
-    # Log for debugging (will help verify headers are correct)
-    user_agent = request.headers.get("User-Agent", "Unknown")
-    print(f"DEBUG: Serving file {filename} | Content-Type: {content_type} | Size: {file_size} | User-Agent: {user_agent}")
+    # Log for debugging (only in development)
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+    if ENVIRONMENT == "development":
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        print(f"DEBUG: Serving file {filename} | Content-Type: {content_type} | Size: {file_size} | User-Agent: {user_agent}")
     
     # Build headers that Instagram requires
     # CRITICAL: No cookies, no auth, no redirects
@@ -220,9 +225,14 @@ async def startup_event():
     """Initialize InstaForge app on startup"""
     global instaforge_app
     try:
-        # Start Cloudflare tunnel
-        print("Starting Cloudflare tunnel...")
-        start_cloudflare(port=8000)
+        # Only start Cloudflare tunnel in development (not in production with Apache)
+        ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+        if ENVIRONMENT == "development":
+            port = int(os.getenv("PORT", "8000"))
+            print("Starting Cloudflare tunnel (development mode)...")
+            start_cloudflare(port=port)
+        else:
+            print("Production mode: Skipping Cloudflare tunnel (using Apache reverse proxy)")
         
         instaforge_app = InstaForgeApp()
         instaforge_app.initialize()
@@ -248,8 +258,10 @@ async def shutdown_event():
     """Cleanup on shutdown"""
     global instaforge_app
     
-    # Stop Cloudflare tunnel
-    stop_cloudflare()
+    # Stop Cloudflare tunnel (only if it was started in development)
+    ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+    if ENVIRONMENT == "development":
+        stop_cloudflare()
     
     if instaforge_app:
         stop_scheduled_publisher()

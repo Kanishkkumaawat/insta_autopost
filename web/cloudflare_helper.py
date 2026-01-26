@@ -140,9 +140,16 @@ def get_cloudflare_url() -> Optional[str]:
 
 
 def get_base_url(request_base_url: str) -> str:
-    """Get base URL, preferring Cloudflare tunnel URL if available"""
-    global _cloudflare_url
+    """Get base URL, preferring production domain or Cloudflare tunnel URL if available"""
+    import os
     
+    # In production, use BASE_URL from environment (your domain)
+    BASE_URL = os.getenv("BASE_URL")
+    if BASE_URL:
+        return BASE_URL.rstrip('/')
+    
+    # In development, use Cloudflare tunnel if available
+    global _cloudflare_url
     if _cloudflare_url:
         return _cloudflare_url.rstrip('/')
     

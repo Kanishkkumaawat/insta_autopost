@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Request, HTTPException, Depends, status, UploadFile, File
+from fastapi import APIRouter, Request, HTTPException, Depends, status, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, HTMLResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import HttpUrl, BaseModel
@@ -29,6 +29,15 @@ from src.models.account import Account, ProxyConfig, WarmingConfig, CommentToDMC
 from src.app import InstaForgeApp
 from src.utils.config import config_manager, Settings
 from src.services.scheduled_posts_store import add_scheduled
+from src.services.batch_upload_service import (
+    extract_zip,
+    validate_file,
+    infer_media_type,
+    process_batch_upload,
+    MAX_FILES_PER_CAMPAIGN,
+    SUPPORTED_FORMATS,
+)
+from src.services.batch_campaign_store import get_campaign, get_all_campaigns
 from src.utils.logger import get_logger
 from src.auth.meta_oauth import get_meta_login_url, META_APP_ID, META_APP_SECRET, META_REDIRECT_URI
 from src.auth.oauth_helper import OAuthHelper
@@ -130,13 +139,22 @@ def _fetch_instagram_username(ig_account_id: str, page_access_token: str) -> str
 # --- Meta OAuth ---
 
 def _resolve_redirect_uri() -> str:
-    """Use META_REDIRECT_URI when set to a custom URL (e.g. ngrok); else Cloudflare tunnel; else env default."""
+    """Use META_REDIRECT_URI when set; else BASE_URL; else Cloudflare tunnel; else env default."""
+    # Priority: META_REDIRECT_URI > BASE_URL > Cloudflare tunnel > localhost
     uri = (META_REDIRECT_URI or "").strip()
     if uri and "localhost" not in uri and "127.0.0.1" not in uri:
         return uri
+    
+    # Check BASE_URL (production domain)
+    BASE_URL = os.getenv("BASE_URL", "").strip().rstrip("/")
+    if BASE_URL:
+        return f"{BASE_URL}/auth/meta/callback"
+    
+    # Fallback to Cloudflare tunnel (development)
     base = (get_cloudflare_url() or "").strip().rstrip("/")
     if base:
         return f"{base}/auth/meta/callback"
+    
     return uri or "http://localhost:8000/auth/meta/callback"
 
 
@@ -666,6 +684,228 @@ async def upload_files(request: Request, files: List[UploadFile] = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload: {str(e)}")
+
+@router.post("/batch/upload")
+async def batch_upload(
+    request: Request,
+    account_id: str = Form(...),
+    start_date: str = Form(...),
+    end_date: Optional[str] = Form(None),
+    caption: str = Form(""),
+    files: Optional[List[UploadFile]] = File(None),
+    zip_file: Optional[UploadFile] = File(None),
+):
+    """
+    Upload and schedule multiple media files as a 30-day batch campaign.
+    Accepts either multiple files OR a ZIP file.
+    """
+    try:
+        from .cloudflare_helper import get_base_url
+        base_url = get_base_url(str(request.base_url))
+        
+        # Parse start_date
+        try:
+            start_date_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            # Convert to naive datetime (remove timezone)
+            if start_date_dt.tzinfo:
+                start_date_dt = start_date_dt.replace(tzinfo=None)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid start_date format: {str(e)}")
+        
+        # Parse end_date (optional)
+        end_date_dt = None
+        if end_date:
+            try:
+                end_date_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                # Convert to naive datetime (remove timezone)
+                if end_date_dt.tzinfo:
+                    end_date_dt = end_date_dt.replace(tzinfo=None)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid end_date format: {str(e)}")
+        
+        # Parse hashtags from form data (can be multiple entries with same key)
+        form_data = await request.form()
+        hashtags_list = form_data.getlist("hashtags")
+        hashtags = [h for h in hashtags_list if h.strip()] if hashtags_list else None
+        
+        # Validate input
+        if not files and not zip_file:
+            raise HTTPException(status_code=400, detail="Either files or zip_file must be provided")
+        
+        if files and zip_file:
+            raise HTTPException(status_code=400, detail="Provide either files OR zip_file, not both")
+        
+        # Prepare upload directory for campaign
+        campaign_upload_dir = Path("uploads") / "batch"
+        campaign_upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        valid_files = []
+        
+        if zip_file:
+            # Handle ZIP upload
+            if not zip_file.filename or not zip_file.filename.lower().endswith('.zip'):
+                raise HTTPException(status_code=400, detail="ZIP file must have .zip extension")
+            
+            # Save ZIP temporarily
+            temp_zip_path = campaign_upload_dir / f"temp_{uuid.uuid4()}.zip"
+            with open(temp_zip_path, "wb") as buffer:
+                shutil.copyfileobj(zip_file.file, buffer)
+            
+            # Extract ZIP
+            extract_dir = campaign_upload_dir / f"extract_{uuid.uuid4()}"
+            extract_dir.mkdir(exist_ok=True)
+            
+            try:
+                extracted_files = extract_zip(temp_zip_path, extract_dir)
+                
+                # Move extracted files to campaign directory (will be organized by campaign_id later)
+                for extracted_file in extracted_files:
+                    # Keep files in extract_dir for now, will move to campaign folder after campaign creation
+                    valid_files.append(extracted_file)
+                
+                # Clean up temp ZIP
+                temp_zip_path.unlink()
+            
+            except ValueError as e:
+                # Clean up on error
+                if temp_zip_path.exists():
+                    temp_zip_path.unlink()
+                if extract_dir.exists():
+                    shutil.rmtree(extract_dir)
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        else:
+            # Handle multiple file uploads
+            if len(files) > MAX_FILES_PER_CAMPAIGN:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Too many files: {len(files)} (max {MAX_FILES_PER_CAMPAIGN})"
+                )
+            
+            # Validate and save files
+            for file in files:
+                if not file.filename:
+                    continue
+                
+                file_ext = Path(file.filename).suffix.lower()
+                if file_ext not in SUPPORTED_FORMATS:
+                    logger.warning("Skipping unsupported file", filename=file.filename, ext=file_ext)
+                    continue
+                
+                # Save file
+                unique_filename = f"{uuid.uuid4()}{file_ext}"
+                file_path = campaign_upload_dir / unique_filename
+                
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+                
+                # Validate saved file
+                is_valid, error = validate_file(file_path)
+                if is_valid:
+                    valid_files.append(file_path)
+                else:
+                    logger.warning("Invalid file skipped", filename=file.filename, error=error)
+                    if file_path.exists():
+                        file_path.unlink()
+        
+        if len(valid_files) == 0:
+            raise HTTPException(status_code=400, detail="No valid files found after validation")
+        
+        if len(valid_files) > MAX_FILES_PER_CAMPAIGN:
+            # Clean up files
+            for f in valid_files:
+                if f.exists():
+                    f.unlink()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Too many valid files: {len(valid_files)} (max {MAX_FILES_PER_CAMPAIGN})"
+            )
+        
+        # Create campaign and organize files
+        campaign_id = str(uuid.uuid4())
+        campaign_dir = campaign_upload_dir / campaign_id
+        campaign_dir.mkdir(exist_ok=True)
+        
+        # Move files to campaign directory and rename for clarity
+        organized_files = []
+        for idx, file_path in enumerate(valid_files):
+            file_ext = file_path.suffix
+            new_name = f"day_{idx:02d}{file_ext}"
+            new_path = campaign_dir / new_name
+            
+            # Move file
+            if file_path != new_path:
+                shutil.move(str(file_path), str(new_path))
+            organized_files.append(new_path)
+        
+        # Clean up extract directory if it exists
+        extract_parent = campaign_upload_dir / f"extract_{uuid.uuid4().hex[:8]}"
+        for extract_dir in campaign_upload_dir.glob("extract_*"):
+            if extract_dir.is_dir() and not any(extract_dir.iterdir()):
+                try:
+                    extract_dir.rmdir()
+                except:
+                    pass
+        
+        # Process batch upload (create campaign and schedule posts)
+        result = await run_in_threadpool(
+            process_batch_upload,
+            account_id=account_id,
+            files=organized_files,
+            start_date=start_date_dt,
+            end_date=end_date_dt,
+            caption=caption,
+            hashtags=hashtags,
+            base_url=base_url,
+        )
+        
+        # Update campaign with actual campaign_id from result
+        campaign_id = result["campaign_id"]
+        
+        logger.info(
+            "Batch upload completed",
+            campaign_id=campaign_id,
+            scheduled_count=result["scheduled_count"],
+            total_files=result["total_files"],
+            errors_count=len(result["errors"]),
+        )
+        
+        return {
+            "status": "success",
+            "campaign_id": campaign_id,
+            "scheduled_count": result["scheduled_count"],
+            "total_files": result["total_files"],
+            "errors": result["errors"],
+            "message": f"Scheduled {result['scheduled_count']} posts starting from {start_date_dt.isoformat()}",
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Batch upload failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Batch upload failed: {str(e)}")
+
+@router.get("/batch/campaigns")
+async def get_batch_campaigns(account_id: Optional[str] = None):
+    """Get all batch campaigns, optionally filtered by account_id."""
+    try:
+        campaigns = get_all_campaigns(account_id=account_id)
+        return {"campaigns": campaigns, "count": len(campaigns)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get campaigns: {str(e)}")
+
+@router.get("/batch/campaigns/{campaign_id}")
+async def get_batch_campaign(campaign_id: str):
+    """Get a specific batch campaign by ID."""
+    try:
+        campaign = get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        return {"campaign": campaign}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get campaign: {str(e)}")
 
 @router.get("/test/verify-url")
 async def verify_url(url: str):
