@@ -327,6 +327,80 @@ class CommentToDMService:
             )
             return False
     
+    def _reply_to_comment_with_ai(
+        self,
+        client: Any,
+        account_id: str,
+        comment_id: str,
+        comment_username: str,
+        ai_message: Optional[str] = None,
+        comment_text: str = "",
+        post_context: str = "",
+        account_username: str = "we",
+        link: Optional[str] = None,
+    ) -> bool:
+        """
+        Reply to a comment with AI-generated text, mentioning the user.
+        Called after successful DM to also engage in the comment thread.
+        
+        Args:
+            client: Instagram client instance
+            account_id: Account identifier
+            comment_id: Comment ID to reply to
+            comment_username: Username to mention in reply
+            ai_message: Pre-generated AI message (if available, will use this)
+            comment_text: Original comment text (for AI generation if needed)
+            post_context: Post caption/context (for AI generation if needed)
+            account_username: Account username replying
+            link: Optional link to include
+            
+        Returns:
+            True if reply was posted successfully, False otherwise
+        """
+        try:
+            # Use provided AI message, or generate a new one
+            if ai_message and ai_message.strip() and ai_message.strip() != FALLBACK_REPLY:
+                reply_text = ai_message.strip()
+            else:
+                # Generate AI reply specifically for comment (shorter, more casual)
+                reply_text = self.ai_reply_service.generate_reply(
+                    user_message=comment_text or "",
+                    post_context=post_context or "",
+                    account_username=account_username,
+                    link=link,
+                )
+                if not reply_text or reply_text.strip() == FALLBACK_REPLY:
+                    # If AI fails, use a simple friendly message
+                    reply_text = "Thanks for your comment! Check your DMs for more details. 💙"
+            
+            # Format: @username {ai_text}
+            # Only add mention if username is available and not already in the text
+            if comment_username and f"@{comment_username}" not in reply_text:
+                formatted_reply = f"@{comment_username} {reply_text}"
+            else:
+                formatted_reply = reply_text
+            
+            # Reply to comment
+            client._make_request("POST", f"{comment_id}/replies", params={"message": formatted_reply})
+            
+            logger.info(
+                "Comment reply posted with AI text",
+                account_id=account_id,
+                comment_id=comment_id,
+                mentioned_user=comment_username,
+                reply_preview=formatted_reply[:100],
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "Failed to post AI comment reply",
+                account_id=account_id,
+                comment_id=comment_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return False
+    
     def process_new_comments_for_dm(
         self,
         account_id: str,
@@ -648,11 +722,14 @@ class CommentToDMService:
         # Get client and send DM
         client = self.account_service.get_client(account_id)
 
+        # Get account username (needed for AI replies and comment mentions)
+        acc = self.account_service.get_account(account_id)
+        account_username = (acc.username if acc else None) or "we"
+
         # Generate DM message: use AI when ai_enabled, else template/default
         ai_enabled = post_config.get("ai_enabled", False) if post_config else False
+        ai_message = None
         if ai_enabled:
-            acc = self.account_service.get_account(account_id)
-            account_username = (acc.username if acc else None) or "we"
             ai_message = self.ai_reply_service.generate_reply(
                 user_message=comment_text or "",
                 post_context=media_caption or "",
@@ -714,6 +791,22 @@ class CommentToDMService:
                     dm_id=result.get("dm_id"),
                     trigger_type=result["trigger_type"],
                 )
+                
+                # After successful DM, also reply to the comment with AI-generated text (mentioning the user)
+                if ai_enabled and comment_username:
+                    # Pass dm_message if it's AI-generated (when ai_message was used), otherwise None to generate new
+                    ai_msg_for_comment = dm_message if (ai_message and ai_message.strip() != FALLBACK_REPLY and dm_message == ai_message.strip()) else None
+                    self._reply_to_comment_with_ai(
+                        client=client,
+                        account_id=account_id,
+                        comment_id=comment_id,
+                        comment_username=comment_username,
+                        ai_message=ai_msg_for_comment,
+                        comment_text=comment_text or "",
+                        post_context=media_caption or "",
+                        account_username=account_username,
+                        link=link_to_send,
+                    )
             elif dm_result.get("error_code") == 10:
                 # Instagram 24h window: user must message you first. Commenting does NOT open DMs.
                 # Fallback: reply to comment with dm_message (AI/template) or link-based text.
