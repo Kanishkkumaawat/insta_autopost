@@ -1125,7 +1125,7 @@ async def test_ai_reply(
         }
 
 
-@router.get("/api/ai/profile")
+@router.get("/ai/profile")
 async def get_ai_profile(
     account_id: Optional[str] = None,
     app: InstaForgeApp = Depends(get_app),
@@ -1171,7 +1171,7 @@ async def get_ai_profile(
         }
 
 
-@router.post("/api/ai/profile/update")
+@router.post("/ai/profile/update")
 async def update_ai_profile(
     account_id: Optional[str] = Form(None),
     brand_name: Optional[str] = Form(None),
@@ -1253,7 +1253,7 @@ async def update_ai_profile(
         }
 
 
-@router.get("/api/ai/memory/stats")
+@router.get("/ai/memory/stats")
 async def get_ai_memory_stats(
     account_id: Optional[str] = None,
     app: InstaForgeApp = Depends(get_app),
@@ -1305,7 +1305,7 @@ async def get_ai_memory_stats(
         }
 
 
-@router.post("/api/ai/memory/reset")
+@router.post("/ai/memory/reset")
 async def reset_ai_memory(
     account_id: Optional[str] = Form(None),
     user_id: Optional[str] = Form(None),
