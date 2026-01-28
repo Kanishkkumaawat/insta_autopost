@@ -56,6 +56,7 @@ class ProfileManager:
             "brand_name": profile.get("brand_name", ""),
             "business_type": profile.get("business_type", ""),
             "tone": profile.get("tone", "friendly"),
+            "custom_tone": profile.get("custom_tone", ""),
             "language": profile.get("language", "en"),
             "pricing": profile.get("pricing", ""),
             "location": profile.get("location", ""),
@@ -83,7 +84,7 @@ class ProfileManager:
         
         # Update fields
         allowed_fields = [
-            "brand_name", "business_type", "tone", "language",
+            "brand_name", "business_type", "tone", "custom_tone", "language",
             "pricing", "location", "about_business", "custom_rules",
             "custom_prompt", "enable_memory"
         ]

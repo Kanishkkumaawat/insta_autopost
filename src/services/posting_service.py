@@ -56,6 +56,16 @@ class PostingService:
             return client.create_media_container(
                 video_url=str(media.url),
                 caption=media.caption or "",
+                media_type="VIDEO",
+            )
+        
+        elif media.media_type == "reels":
+            if not media.url:
+                raise PostingError("Video URL is required for reels posts")
+            return client.create_media_container(
+                video_url=str(media.url),
+                caption=media.caption or "",
+                media_type="REELS",
             )
         
         elif media.media_type == "carousel":
@@ -215,10 +225,43 @@ class PostingService:
             # Upload media and get container ID
             container_id = self._upload_media_to_instagram(client, post.media)
             
-            # Wait for container to be ready (for videos)
-            if post.media.media_type == "video":
-                logger.info("Waiting for video processing", container_id=container_id)
-                time.sleep(5)
+            # Wait for container to be ready (for videos and reels)
+            if post.media.media_type in ("video", "reels"):
+                logger.info(
+                    "Waiting for video/reels processing",
+                    container_id=container_id,
+                    media_type=post.media.media_type,
+                )
+                # Reels may need more time to process
+                wait_time = 10 if post.media.media_type == "reels" else 5
+                time.sleep(wait_time)
+                
+                # Check status and wait if needed
+                max_wait = 60  # Maximum 60 seconds
+                waited = 0
+                while waited < max_wait:
+                    status = client.get_media_status(container_id)
+                    status_code = status.get("status_code")
+                    if status_code == "FINISHED":
+                        logger.info("Video/reels container ready", container_id=container_id)
+                        break
+                    elif status_code == "ERROR":
+                        error_msg = status.get("status", "Unknown error")
+                        raise PostingError(f"Video/reels processing failed: {error_msg}")
+                    logger.debug(
+                        "Waiting for video/reels processing",
+                        container_id=container_id,
+                        status=status_code,
+                        waited=waited,
+                    )
+                    time.sleep(5)
+                    waited += 5
+                
+                if waited >= max_wait:
+                    logger.warning(
+                        "Video/reels processing timeout, proceeding anyway",
+                        container_id=container_id,
+                    )
             
             # Publish the post
             result = self._publish_post(client, container_id, post)

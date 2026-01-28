@@ -3,6 +3,7 @@
 from typing import Any, Dict, List, Optional
 
 from src.utils.logger import get_logger
+from src.utils.exceptions import AccountError
 from src.features.ai_dm import AIDMHandler
 
 logger = get_logger(__name__)
@@ -105,14 +106,6 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
         value: Webhook message value payload
         app: InstaForge app instance
     """
-    # Print to console for immediate visibility
-    print(f"[AI_DM] Processing start - Account: {account_id}")
-    
-    # Print to console for immediate visibility
-    print(f"[AI_DM] Processing start - Account: {account_id}")
-    if isinstance(value, dict):
-        print(f"[AI_DM] Value keys: {list(value.keys())}")
-    
     logger.info(
         "AI_DM_WEBHOOK",
         action="processing_start",
@@ -121,7 +114,17 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
     )
     
     # Check if AI DM is enabled for this account
-    account = app.account_service.get_account(account_id)
+    try:
+        account = app.account_service.get_account(account_id)
+    except AccountError as e:
+        logger.warning(
+            "AI_DM_WEBHOOK",
+            action="skipped",
+            reason="account_not_found",
+            account_id=account_id,
+            error=str(e),
+        )
+        return
     if not account:
         logger.warning(
             "AI_DM_WEBHOOK",
@@ -169,16 +172,17 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
         value_preview=str(value)[:500] if isinstance(value, dict) else str(value)[:200],
     )
     
-    from_obj = value.get("from") or {}
+    # Instagram sends: "sender" (not "from") and "message" - support both
+    from_obj = value.get("from") or value.get("sender") or {}
     message_obj = value.get("message") or {}
     
-    # Try alternative structure (messaging format - Facebook Messenger style)
+    # Try alternative structure (messaging array wrapper - value is { messaging: [ {...} ] })
     if not from_obj or not message_obj:
         messaging = value.get("messaging") or {}
         if isinstance(messaging, list) and messaging:
             messaging = messaging[0]
         if isinstance(messaging, dict):
-            from_obj = messaging.get("sender") or from_obj or {}
+            from_obj = messaging.get("sender") or messaging.get("from") or from_obj or {}
             message_obj = messaging.get("message") or message_obj or {}
     
     # Try items array structure (Instagram Direct Messages)
@@ -210,10 +214,10 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
     # Extract message text - try multiple locations
     message_text = ""
     if message_obj and isinstance(message_obj, dict):
-        message_text = message_obj.get("text") or message_obj.get("message") or ""
+        message_text = (message_obj.get("text") or message_obj.get("message") or "").strip()
     # Fallback: try direct in value
     if not message_text:
-        message_text = value.get("text") or value.get("message") or ""
+        message_text = (value.get("text") or value.get("message") or "").strip()
     
     # Extract message_id
     message_id = None
@@ -227,15 +231,17 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
     if from_obj and isinstance(from_obj, dict):
         username = from_obj.get("username") or from_obj.get("name") or ""
     
-    # Check if this is an outgoing message (sent by us) - skip those
+    # Check if this is an outgoing/echo message (sent by us) - skip those
     # Instagram webhooks can include both incoming and outgoing messages
     is_outgoing = False
+    if value.get("is_echo") is True:
+        is_outgoing = True  # Message sent by our business account
     if value.get("direction") == "outgoing":
         is_outgoing = True
     # Also check if there's a "sent_by" field indicating we sent it
     if value.get("sent_by") and isinstance(value.get("sent_by"), dict):
         sent_by_id = value.get("sent_by").get("id")
-        if sent_by_id == account.instagram_business_id or sent_by_id == account.account_id:
+        if sent_by_id == getattr(account, "instagram_business_id", None) or sent_by_id == account.account_id:
             is_outgoing = True
     
     logger.info(
@@ -351,7 +357,18 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
                 )
                 return
             
-            client = app.account_service.get_client(account_id)
+            try:
+                client = app.account_service.get_client(account_id)
+            except AccountError as e:
+                logger.warning(
+                    "AI_DM_WEBHOOK",
+                    action="send_failed",
+                    reason="client_not_found",
+                    account_id=account_id,
+                    user_id=user_id,
+                    error=str(e),
+                )
+                return
             # Username is optional - send_direct_message can work with just recipient_id
             recipient_username = username or (from_obj.get("username") if isinstance(from_obj, dict) else "") or ""
             
@@ -452,13 +469,18 @@ def process_webhook_payload(body: Any, app: Any) -> None:
     and messages to logging. Does not modify comment logic.
     """
     payload = _normalize_payload(body)
+    entries = payload.get("entry") or []
+    # Log which format we received (messaging vs changes) for debugging
+    first_entry = entries[0] if entries else {}
+    has_messaging = bool(first_entry.get("messaging"))
+    has_changes = bool(first_entry.get("changes"))
     logger.info(
         "Instagram webhook payload received",
         payload_type=type(body).__name__,
-        has_object=bool(payload.get("object")),
         object_type=payload.get("object"),
-        has_entries=bool(payload.get("entry")),
-        entry_count=len(payload.get("entry", [])),
+        entry_count=len(entries),
+        has_messaging=has_messaging,
+        has_changes=has_changes,
     )
 
     obj = payload.get("object")
@@ -466,13 +488,34 @@ def process_webhook_payload(body: Any, app: Any) -> None:
         logger.debug("Instagram webhook ignored: object is not instagram", object=obj)
         return
 
-    entries = payload.get("entry") or []
     for entry in entries:
         ig_id = entry.get("id")
         if not ig_id:
             continue
         account_id = _account_id_for_ig_business(str(ig_id), app)
 
+        # Format 1: Instagram Messaging (Messenger Platform) - entry.messaging[] (no "changes")
+        messaging_list = entry.get("messaging") or []
+        if isinstance(messaging_list, list):
+            for messaging_item in messaging_list:
+                if not isinstance(messaging_item, dict):
+                    continue
+                if account_id and app:
+                    try:
+                        _process_incoming_dm_for_ai_reply(
+                            account_id=account_id,
+                            value=messaging_item,
+                            app=app,
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            "AI DM auto-reply failed (messaging format)",
+                            account_id=account_id,
+                            error=str(e),
+                            value=messaging_item,
+                        )
+
+        # Format 2: Instagram Graph API - entry.changes[] with field "messages"
         for change in entry.get("changes") or []:
             field = change.get("field")
             value = change.get("value")
@@ -519,15 +562,6 @@ def process_webhook_payload(body: Any, app: Any) -> None:
                     )
 
             elif field == "messages":
-                # Print to console for immediate visibility
-                print("=" * 80)
-                print(f"[WEBHOOK] Messages event received!")
-                print(f"[WEBHOOK] Entry ID: {ig_id}")
-                print(f"[WEBHOOK] Account ID: {account_id}")
-                print(f"[WEBHOOK] Has Account: {bool(account_id)}")
-                print(f"[WEBHOOK] Has App: {bool(app)}")
-                print("=" * 80)
-                
                 logger.info(
                     "Instagram webhook messages event",
                     entry_id=ig_id,

@@ -1,0 +1,296 @@
+{% extends "layout.html" %}
+
+{% block title %}Account Status - InstaForge{% endblock %}
+
+{% block page_title %}Account Status{% endblock %}
+
+{% block content %}
+<div class="accounts-status-page">
+    <div class="page-header">
+        <div class="header-actions">
+            <button id="refresh-status" class="btn btn-primary">
+                <span class="icon">🔄</span> Refresh Status
+            </button>
+            <button id="reload-accounts" class="btn btn-secondary">
+                <span class="icon">♻️</span> Reload Accounts
+            </button>
+        </div>
+    </div>
+
+    <div id="accounts-list" class="accounts-list">
+        <div class="loading">Loading account status...</div>
+    </div>
+</div>
+
+<style>
+.accounts-status-page {
+    padding: 20px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.accounts-list {
+    display: grid;
+    gap: 20px;
+}
+
+.account-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 4px solid #ccc;
+}
+
+.account-card.healthy {
+    border-left-color: #10b981;
+}
+
+.account-card.warning {
+    border-left-color: #f59e0b;
+}
+
+.account-card.critical {
+    border-left-color: #ef4444;
+}
+
+.account-card.unknown {
+    border-left-color: #6b7280;
+}
+
+.account-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.account-info h3 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.account-info .account-id {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge.healthy {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-badge.critical {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-badge.unknown {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.checks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.check-item {
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    border-left: 3px solid #ccc;
+}
+
+.check-item.ok {
+    border-left-color: #10b981;
+}
+
+.check-item.failed {
+    border-left-color: #ef4444;
+}
+
+.check-item.unknown {
+    border-left-color: #6b7280;
+}
+
+.check-name {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.check-status {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.check-error {
+    font-size: 12px;
+    color: #ef4444;
+    margin-top: 4px;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+}
+
+.error-message {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.success-message {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+</style>
+
+<script>
+let refreshInterval = null;
+
+async function loadAccountStatus() {
+    const container = document.getElementById('accounts-list');
+    container.innerHTML = '<div class="loading">Loading account status...</div>';
+    
+    try {
+        const response = await fetch('/api/accounts/status');
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.accounts) {
+            renderAccounts(data.accounts);
+        } else {
+            container.innerHTML = '<div class="error-message">Failed to load account status</div>';
+        }
+    } catch (error) {
+        console.error('Error loading account status:', error);
+        container.innerHTML = '<div class="error-message">Error loading account status: ' + error.message + '</div>';
+    }
+}
+
+function renderAccounts(accounts) {
+    const container = document.getElementById('accounts-list');
+    
+    if (accounts.length === 0) {
+        container.innerHTML = '<div class="loading">No accounts configured</div>';
+        return;
+    }
+    
+    container.innerHTML = accounts.map(account => {
+        const statusClass = account.status.toLowerCase();
+        const checks = account.checks || {};
+        
+        const checksHtml = Object.entries(checks).map(([name, check]) => {
+            const checkStatus = check.status || 'unknown';
+            const checkClass = checkStatus === 'ok' ? 'ok' : (checkStatus === 'failed' ? 'failed' : 'unknown');
+            const errorHtml = check.error ? `<div class="check-error">${check.error}</div>` : '';
+            
+            return `
+                <div class="check-item ${checkClass}">
+                    <div class="check-name">${name.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                    <div class="check-status">${checkStatus === 'ok' ? '✓ OK' : (checkStatus === 'failed' ? '✗ Failed' : '? Unknown')}</div>
+                    ${errorHtml}
+                </div>
+            `;
+        }).join('');
+        
+        return `
+            <div class="account-card ${statusClass}">
+                <div class="account-header">
+                    <div class="account-info">
+                        <h3>${account.username || 'Unknown'}</h3>
+                        <div class="account-id">${account.account_id}</div>
+                    </div>
+                    <span class="status-badge ${statusClass}">${account.status}</span>
+                </div>
+                <div class="checks-grid">
+                    ${checksHtml}
+                </div>
+                <div style="margin-top: 12px; font-size: 12px; color: #6b7280;">
+                    Last checked: ${new Date(account.timestamp).toLocaleString()}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+document.getElementById('refresh-status').addEventListener('click', () => {
+    loadAccountStatus();
+});
+
+document.getElementById('reload-accounts').addEventListener('click', async () => {
+    const button = document.getElementById('reload-accounts');
+    button.disabled = true;
+    button.textContent = 'Reloading...';
+    
+    try {
+        const response = await fetch('/api/accounts/reload', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            const container = document.getElementById('accounts-list');
+            container.innerHTML = '<div class="success-message">Accounts reloaded successfully. Refreshing status...</div>';
+            setTimeout(() => {
+                loadAccountStatus();
+            }, 1000);
+        } else {
+            alert('Failed to reload accounts: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (error) {
+        console.error('Error reloading accounts:', error);
+        alert('Error reloading accounts: ' + error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<span class="icon">♻️</span> Reload Accounts';
+    }
+});
+
+// Load on page load
+loadAccountStatus();
+
+// Auto-refresh every 60 seconds
+refreshInterval = setInterval(loadAccountStatus, 60000);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

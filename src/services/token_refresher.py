@@ -193,6 +193,9 @@ def stop_daily_token_refresh_job() -> None:
     global _refresh_thread
     _refresh_stop.set()
     if _refresh_thread is not None:
-        _refresh_thread.join(timeout=10)
+        # Don't wait too long - daemon thread will exit with main process
+        _refresh_thread.join(timeout=2)
+        if _refresh_thread.is_alive():
+            logger.warning("Token refresh thread still alive after timeout, continuing shutdown")
         _refresh_thread = None
     logger.info("Daily token refresh job stopped")

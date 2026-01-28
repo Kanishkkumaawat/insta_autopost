@@ -252,3 +252,154 @@ class AccountService:
                 }
         
         return results
+    
+    def add_account(self, account: Account) -> None:
+        """
+        Add a new account dynamically.
+        
+        Args:
+            account: Account to add
+            
+        Raises:
+            AccountError: If account already exists or initialization fails
+        """
+        with self.lock:
+            if account.account_id in self.accounts:
+                raise AccountError(f"Account already exists: {account.account_id}")
+            
+            # Add to accounts dict
+            self.accounts[account.account_id] = account
+            
+            # Initialize client for this account
+            try:
+                # Get proxy URL if enabled
+                proxy_url = None
+                if account.proxy.enabled:
+                    if self.proxy_manager:
+                        proxy_url = self.proxy_manager.get_proxy_url(account.account_id)
+                    else:
+                        proxy_url = account.proxy.proxy_url
+                
+                # Create client for monitoring
+                client = InstagramClient(
+                    access_token=account.access_token,
+                    rate_limiter=self.rate_limiter,
+                    proxy_url=proxy_url,
+                    image_upload_timeout=self.image_upload_timeout,
+                    video_upload_timeout=self.video_upload_timeout,
+                )
+                self.clients[account.account_id] = client
+                
+                # Create posting client
+                posting_client = InstagramClient(
+                    access_token=account.access_token,
+                    rate_limiter=self.rate_limiter_posting,
+                    proxy_url=proxy_url,
+                    image_upload_timeout=self.image_upload_timeout,
+                    video_upload_timeout=self.video_upload_timeout,
+                )
+                self.posting_clients[account.account_id] = posting_client
+                
+                logger.info(
+                    "Account added successfully",
+                    account_id=account.account_id,
+                    username=account.username,
+                )
+            
+            except Exception as e:
+                # Rollback: remove from accounts dict
+                self.accounts.pop(account.account_id, None)
+                logger.error(
+                    "Failed to add account",
+                    account_id=account.account_id,
+                    error=str(e),
+                )
+                raise AccountError(f"Failed to add account {account.account_id}: {str(e)}")
+    
+    def remove_account(self, account_id: str) -> None:
+        """
+        Remove an account dynamically.
+        
+        Args:
+            account_id: Account identifier to remove
+            
+        Raises:
+            AccountError: If account not found
+        """
+        with self.lock:
+            if account_id not in self.accounts:
+                raise AccountError(f"Account not found: {account_id}")
+            
+            # Remove from accounts dict
+            self.accounts.pop(account_id, None)
+            
+            # Remove clients
+            self.clients.pop(account_id, None)
+            self.posting_clients.pop(account_id, None)
+            
+            logger.info("Account removed", account_id=account_id)
+    
+    def update_account(self, account: Account) -> None:
+        """
+        Update an existing account dynamically.
+        
+        Args:
+            account: Updated account
+            
+        Raises:
+            AccountError: If account not found or update fails
+        """
+        with self.lock:
+            if account.account_id not in self.accounts:
+                raise AccountError(f"Account not found: {account.account_id}")
+            
+            # Update account
+            self.accounts[account.account_id] = account
+            
+            # Re-initialize clients for this account
+            try:
+                # Remove old clients
+                self.clients.pop(account.account_id, None)
+                self.posting_clients.pop(account.account_id, None)
+                
+                # Get proxy URL if enabled
+                proxy_url = None
+                if account.proxy.enabled:
+                    if self.proxy_manager:
+                        proxy_url = self.proxy_manager.get_proxy_url(account.account_id)
+                    else:
+                        proxy_url = account.proxy.proxy_url
+                
+                # Create new client for monitoring
+                client = InstagramClient(
+                    access_token=account.access_token,
+                    rate_limiter=self.rate_limiter,
+                    proxy_url=proxy_url,
+                    image_upload_timeout=self.image_upload_timeout,
+                    video_upload_timeout=self.video_upload_timeout,
+                )
+                self.clients[account.account_id] = client
+                
+                # Create new posting client
+                posting_client = InstagramClient(
+                    access_token=account.access_token,
+                    rate_limiter=self.rate_limiter_posting,
+                    proxy_url=proxy_url,
+                    image_upload_timeout=self.image_upload_timeout,
+                    video_upload_timeout=self.video_upload_timeout,
+                )
+                self.posting_clients[account.account_id] = posting_client
+                
+                logger.info(
+                    "Account updated successfully",
+                    account_id=account.account_id,
+                    username=account.username,
+                )
+            
+            except Exception as e:
+                logger.error(
+                    "Failed to update account",
+                    account_id=account.account_id,
+                    error=str(e),
+                )
+                raise AccountError(f"Failed to update account {account.account_id}: {str(e)}")

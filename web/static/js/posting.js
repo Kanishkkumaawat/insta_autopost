@@ -48,6 +48,21 @@ function togglePostByUrl() {
         uploadedFiles = [];
         updateFileList();
     }
+    updateVideoUrlWarning();
+}
+
+function updateVideoUrlWarning() {
+    const mediaType = document.getElementById('media-type').value;
+    const postByUrl = document.getElementById('post-by-url-toggle').checked;
+    const warning = document.getElementById('video-url-warning');
+    
+    if (warning) {
+        if (postByUrl && (mediaType === 'video' || mediaType === 'reels')) {
+            warning.style.display = 'block';
+        } else {
+            warning.style.display = 'none';
+        }
+    }
 }
 
 // Media Type
@@ -64,6 +79,23 @@ function setMediaType(type) {
             btn.classList.remove('btn-primary');
         }
     });
+    
+    // Update video URL warning
+    updateVideoUrlWarning();
+    
+    // Auto-enable "Post by URL" for video/reels with helpful message
+    if ((type === 'video' || type === 'reels') && !document.getElementById('post-by-url-toggle').checked) {
+        const shouldEnable = confirm(
+            `For ${type} posts, "Post by URL" is recommended.\n\n` +
+            `✅ Use Cloudinary, S3, or Firebase Storage URLs\n` +
+            `❌ Avoid Cloudflare tunnels/ngrok (unreliable)\n\n` +
+            `Enable "Post by URL" now?`
+        );
+        if (shouldEnable) {
+            document.getElementById('post-by-url-toggle').checked = true;
+            togglePostByUrl();
+        }
+    }
 }
 
 // File Upload
@@ -185,8 +217,22 @@ async function submitPost() {
                 alert('All URLs must be HTTPS. Use Cloudinary, Imgur, S3, etc.');
                 return;
             }
-            if (/localhost|127\.0\.0\.1|trycloudflare\.com/i.test(u)) {
-                alert('Avoid localhost and Cloudflare tunnel URLs. Use a static host (Cloudinary, Imgur, S3).');
+            // Check for unreliable hosts (especially for video/reels)
+            if (/localhost|127\.0\.0\.1|trycloudflare\.com|ngrok/i.test(u)) {
+                const mediaTypeName = (mediaType === 'reels') ? 'Reels' : (mediaType === 'video') ? 'Video' : 'Media';
+                alert(
+                    `⚠️ ${mediaTypeName} posts require reliable hosting!\n\n` +
+                    `❌ DO NOT USE:\n` +
+                    `• Cloudflare tunnels (trycloudflare.com)\n` +
+                    `• Ngrok\n` +
+                    `• Localhost URLs\n\n` +
+                    `✅ USE INSTEAD:\n` +
+                    `• Cloudinary (https://cloudinary.com) - Recommended\n` +
+                    `• AWS S3 (with public access)\n` +
+                    `• Firebase Storage\n` +
+                    `• Imgur (for smaller files)\n\n` +
+                    `Upload your file to one of these services and use the direct HTTPS URL.`
+                );
                 return;
             }
         }

@@ -3,12 +3,15 @@
 import schedule
 import time
 from datetime import datetime
+from typing import Dict, Any
 
 from .utils.config import config_manager
 from .utils.logger import setup_logger, get_logger
 from .api.rate_limiter import RateLimiter
 from .services.account_service import AccountService
 from .services.posting_service import PostingService
+from .services.account_onboarding import AccountOnboardingService
+from .services.account_health import AccountHealthService
 from .proxies.proxy_manager import ProxyManager
 from .warming.warming_service import WarmingService
 from .features.comments.comment_service import CommentService
@@ -33,6 +36,8 @@ class InstaForgeApp:
         self.comment_service = None
         self.comment_monitor = None
         self.comment_to_dm_service = None
+        self.account_onboarding_service = None
+        self.account_health_service = None
         # Expose config_manager as config_loader for backward compatibility if needed
         self.config_loader = config_manager
     
@@ -150,6 +155,20 @@ class InstaForgeApp:
             monitor_recent_posts=3,  # Fewer posts to leave headroom for posting
         )
         
+        # Initialize account onboarding service
+        self.account_onboarding_service = AccountOnboardingService(
+            account_service=self.account_service,
+            comment_monitor=self.comment_monitor,
+            comment_to_dm_service=self.comment_to_dm_service,
+            comment_service=self.comment_service,
+        )
+        
+        # Initialize account health service
+        self.account_health_service = AccountHealthService(
+            account_service=self.account_service,
+            check_interval_seconds=600,  # 10 minutes
+        )
+        
         logger.info("Application initialized successfully")
     
     def verify_setup(self):
@@ -201,9 +220,107 @@ class InstaForgeApp:
             schedule.run_pending()
             time.sleep(60)  # Check every minute
     
+    def reload_accounts(self) -> Dict[str, Any]:
+        """
+        Reload accounts from config and re-register in all services.
+        
+        This method:
+        1. Reloads accounts from config
+        2. Updates account_service with new accounts
+        3. Updates proxy_manager
+        4. Re-registers accounts in comment monitor
+        5. Re-schedules warming (if needed)
+        
+        Returns:
+            Dict with reload results
+        """
+        logger.info("Reloading accounts from config")
+        
+        results = {
+            "accounts_loaded": 0,
+            "accounts_added": [],
+            "accounts_removed": [],
+            "accounts_updated": [],
+            "errors": [],
+        }
+        
+        try:
+            # Reload accounts from config
+            new_accounts = config_manager.load_accounts()
+            old_account_ids = set(self.account_service.list_accounts())
+            new_account_ids = {acc.account_id for acc in new_accounts}
+            
+            # Find added, removed, and updated accounts
+            added_ids = new_account_ids - old_account_ids
+            removed_ids = old_account_ids - new_account_ids
+            existing_ids = old_account_ids & new_account_ids
+            
+            # Update account service
+            self.account_service.update_accounts(new_accounts)
+            self.accounts = new_accounts
+            
+            # Update proxy manager
+            accounts_dict = {acc.account_id: acc for acc in new_accounts}
+            self.proxy_manager = ProxyManager(
+                accounts=accounts_dict,
+                connection_timeout=self.config.proxies.connection_timeout,
+                max_retries=self.config.proxies.max_retries,
+                verify_ssl=self.config.proxies.verify_ssl,
+            )
+            
+            # Re-register accounts in comment monitor
+            if self.comment_monitor:
+                # Stop monitoring for removed accounts
+                for account_id in removed_ids:
+                    try:
+                        self.comment_monitor.stop_monitoring(account_id)
+                        results["accounts_removed"].append(account_id)
+                        logger.info("Stopped monitoring for removed account", account_id=account_id)
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to stop monitoring for removed account",
+                            account_id=account_id,
+                            error=str(e),
+                        )
+                
+                # Start monitoring for added accounts
+                for account_id in added_ids:
+                    try:
+                        self.comment_monitor.start_monitoring(account_id)
+                        results["accounts_added"].append(account_id)
+                        logger.info("Started monitoring for new account", account_id=account_id)
+                    except Exception as e:
+                        error_msg = f"Failed to start monitoring for new account: {str(e)}"
+                        results["errors"].append({"account_id": account_id, "error": error_msg})
+                        logger.error("Failed to start monitoring for new account", account_id=account_id, error=str(e))
+            
+            # Note: Warming service and scheduler are global and automatically use all accounts
+            # via account_service, so no re-registration needed
+            
+            results["accounts_loaded"] = len(new_accounts)
+            
+            logger.info(
+                "Accounts reloaded successfully",
+                total_accounts=len(new_accounts),
+                added=len(added_ids),
+                removed=len(removed_ids),
+            )
+        
+        except Exception as e:
+            error_msg = f"Failed to reload accounts: {str(e)}"
+            results["errors"].append({"error": error_msg})
+            logger.error("Failed to reload accounts", error=str(e))
+            raise
+        
+        return results
+    
     def shutdown(self):
         """Gracefully shutdown the application"""
         logger.info("Shutting down InstaForge application")
+        
+        # Stop health monitoring
+        if self.account_health_service:
+            self.account_health_service.stop_monitoring()
         
         # Stop comment monitoring
         if self.comment_monitor:

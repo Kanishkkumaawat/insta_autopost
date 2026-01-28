@@ -9,6 +9,7 @@ import requests
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request, HTTPException, Depends, status, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, HTMLResponse
@@ -71,6 +72,22 @@ def get_app() -> InstaForgeApp:
     if _app_instance is None:
         raise HTTPException(status_code=500, detail="Application not initialized")
     return _app_instance
+
+
+def _is_own_server_url(url: str, request: Request) -> bool:
+    """Return True if the URL points to this app's own server (same host as public base URL)."""
+    try:
+        from .cloudflare_helper import get_base_url
+        app_base = get_base_url(str(request.base_url))
+        if not app_base:
+            return False
+        parsed_url = urlparse(url)
+        parsed_base = urlparse(app_base)
+        url_host = (parsed_url.netloc or "").lower().split(":")[0]
+        base_host = (parsed_base.netloc or "").lower().split(":")[0]
+        return bool(url_host and base_host and url_host == base_host)
+    except Exception:
+        return False
 
 
 @router.get("/health")
@@ -288,9 +305,18 @@ async def auth_meta_callback(request: Request):
             instagram_business_id=ig_account_id,
         )
 
+        # Reload accounts so new Meta account is registered everywhere (comment monitor, etc.)
         app = get_app()
-        app.accounts = accounts
-        app.account_service.update_accounts(accounts)
+        try:
+            app.reload_accounts()
+            logger.info("Meta OAuth: accounts reloaded, new account registered in all services")
+        except Exception as reload_err:
+            logger.warning(
+                "Meta OAuth: reload_accounts failed (account saved, may need manual reload)",
+                error=str(reload_err),
+            )
+            app.accounts = accounts
+            app.account_service.update_accounts(accounts)
 
         _meta_token_store.clear()
         _meta_token_store.update({
@@ -425,8 +451,8 @@ async def update_settings(settings: Settings, app: InstaForgeApp = Depends(get_a
 async def create_post(request: Request, post_data: CreatePostRequest, app: InstaForgeApp = Depends(get_app)):
     """Create a new post"""
     try:
-        # Handle reels (treat as video)
-        media_type = "video" if post_data.media_type == "reels" else post_data.media_type
+        # Keep reels as reels (don't convert to video - Instagram API needs REELS type)
+        media_type = post_data.media_type
         
         # Build PostMedia object
         if media_type == "carousel":
@@ -448,18 +474,40 @@ async def create_post(request: Request, post_data: CreatePostRequest, app: Insta
             if not post_data.urls or len(post_data.urls) != 1:
                 raise HTTPException(status_code=400, detail=f"{media_type.capitalize()} posts require exactly 1 URL.")
             
-            # Infer media_type from URL so .mp4 etc. are never sent as image (fixes Instagram timeout)
+            # Infer media_type from URL if not explicitly set
             # Handle query parameters (e.g. ?t=timestamp) by checking URL before query
             url0_clean = post_data.urls[0].split("?")[0].split("#")[0].lower()
-            if url0_clean.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
-                media_type = "video"
+            if media_type not in ("video", "reels") and url0_clean.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm")):
+                # If user selected "image" but URL is video, change to video
+                # But if user selected "reels", keep it as reels
+                if media_type != "reels":
+                    media_type = "video"
+                    logger.info("Auto-detected video from URL extension", url=post_data.urls[0])
             
             media = PostMedia(media_type=media_type, url=HttpUrl(post_data.urls[0]), caption=post_data.caption)
         
-        # Localhost check (always, including scheduled)
+        # URL validation (always, including scheduled)
         for url in post_data.urls:
+            # Check for invalid protocols
             if "localhost" in url or "127.0.0.1" in url or url.startswith("http://"):
                 raise HTTPException(status_code=400, detail="Instagram requires public HTTPS URLs.")
+            
+            # Block unreliable tunnel hosts for video/reels unless URL is our own server
+            if media_type in ("video", "reels"):
+                if _is_own_server_url(url, request):
+                    # Same-origin: video served from our uploads — allowed (no external host needed)
+                    pass
+                else:
+                    unreliable_hosts = ["trycloudflare.com", "ngrok.io", "ngrok-free.app"]
+                    if any(host in url.lower() for host in unreliable_hosts):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"⚠️ {media_type.capitalize()} posts: Cloudflare tunnels and ngrok are unreliable for video/reels.\n\n"
+                                f"✅ Use your own server: upload the file with “Upload file” so the video is served from this app. "
+                                f"In production, set BASE_URL (or APP_URL) to your public HTTPS domain so Instagram can fetch the file."
+                            )
+                        )
 
         is_scheduled = post_data.scheduled_time is not None
 
@@ -1099,18 +1147,21 @@ async def test_ai_reply(
                 "ai_dm_enabled": ai_dm_enabled,
             }
         
-        # Generate reply
-        reply = ai_handler.get_ai_reply(
-            message=message,
+        # Generate reply using process_incoming_dm (simulates webhook flow)
+        result = ai_handler.process_incoming_dm(
             account_id=account_id,
             user_id=user_id or "test_user_123",
+            message_text=message,
+            message_id=None,
             account_username=account_username,
         )
         
         return {
             "status": "success",
             "message": message,
-            "reply": reply,
+            "reply_text": result.get("reply_text"),
+            "reply_status": result.get("status"),
+            "reason": result.get("reason"),
             "account_id": account_id,
             "user_id": user_id,
             "account_username": account_username,
@@ -1177,6 +1228,7 @@ async def update_ai_profile(
     brand_name: Optional[str] = Form(None),
     business_type: Optional[str] = Form(None),
     tone: Optional[str] = Form(None),
+    custom_tone: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
     pricing: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
@@ -1211,6 +1263,8 @@ async def update_ai_profile(
             update_data["business_type"] = business_type
         if tone is not None:
             update_data["tone"] = tone
+        if custom_tone is not None:
+            update_data["custom_tone"] = custom_tone
         if language is not None:
             update_data["language"] = language
         if pricing is not None:
@@ -1648,3 +1702,113 @@ async def remove_post_dm_file(media_id: str, account_id: Optional[str] = None, a
         return {"status": "success", "account_id": account_id, "media_id": media_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove post DM: {str(e)}")
+
+
+# Account Management Endpoints
+
+@router.get("/accounts/status")
+async def get_accounts_status(app: InstaForgeApp = Depends(get_app)):
+    """Get health status for all accounts"""
+    try:
+        if not app.account_health_service:
+            raise HTTPException(status_code=500, detail="Health service not initialized")
+        
+        # Check health for all accounts
+        results = app.account_health_service.check_all_accounts()
+        
+        # Format response
+        status_list = []
+        for account_id, result in results.items():
+            try:
+                account = app.account_service.get_account(account_id)
+                status_list.append({
+                    "account_id": account_id,
+                    "username": account.username,
+                    "status": result.status.value,
+                    "checks": result.checks,
+                    "timestamp": result.timestamp.isoformat(),
+                })
+            except Exception as e:
+                logger.warning("Failed to get account info for status", account_id=account_id, error=str(e))
+                status_list.append({
+                    "account_id": account_id,
+                    "username": "Unknown",
+                    "status": result.status.value,
+                    "checks": result.checks,
+                    "timestamp": result.timestamp.isoformat(),
+                })
+        
+        return {
+            "status": "success",
+            "accounts": status_list,
+            "total": len(status_list),
+        }
+    except Exception as e:
+        logger.exception("Failed to get account status", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get account status: {str(e)}")
+
+
+@router.get("/accounts/{account_id}/status")
+async def get_account_status(account_id: str, app: InstaForgeApp = Depends(get_app)):
+    """Get health status for a specific account"""
+    try:
+        if not app.account_health_service:
+            raise HTTPException(status_code=500, detail="Health service not initialized")
+        
+        # Check health for this account
+        result = app.account_health_service.check_account_health(account_id)
+        
+        try:
+            account = app.account_service.get_account(account_id)
+            username = account.username
+        except Exception:
+            username = "Unknown"
+        
+        return {
+            "status": "success",
+            "account_id": account_id,
+            "username": username,
+            "health_status": result.status.value,
+            "checks": result.checks,
+            "timestamp": result.timestamp.isoformat(),
+        }
+    except Exception as e:
+        logger.exception("Failed to get account status", account_id=account_id, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get account status: {str(e)}")
+
+
+@router.post("/accounts/{account_id}/onboard")
+async def onboard_account(account_id: str, app: InstaForgeApp = Depends(get_app)):
+    """Onboard a specific account through the onboarding pipeline"""
+    try:
+        if not app.account_onboarding_service:
+            raise HTTPException(status_code=500, detail="Onboarding service not initialized")
+        
+        # Get account
+        account = app.account_service.get_account(account_id)
+        
+        # Run onboarding
+        result = app.account_onboarding_service.onboard_account(account, app_instance=app)
+        
+        return {
+            "status": "success",
+            "onboarding_result": result.to_dict(),
+        }
+    except Exception as e:
+        logger.exception("Failed to onboard account", account_id=account_id, error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to onboard account: {str(e)}")
+
+
+@router.post("/accounts/reload")
+async def reload_accounts(app: InstaForgeApp = Depends(get_app)):
+    """Reload accounts from config and re-register in all services"""
+    try:
+        results = app.reload_accounts()
+        
+        return {
+            "status": "success",
+            "results": results,
+        }
+    except Exception as e:
+        logger.exception("Failed to reload accounts", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to reload accounts: {str(e)}")

@@ -110,14 +110,21 @@
                                 <label for="tone" class="form-label">
                                     <span class="label-icon">🎨</span> Communication Tone
                                 </label>
-                                <select id="tone" name="tone" class="form-control">
+                                <select id="tone" name="tone" class="form-control" onchange="toggleCustomTone()">
                                     <option value="friendly">😊 Friendly (Default)</option>
                                     <option value="professional">💼 Professional</option>
                                     <option value="casual">👋 Casual</option>
                                     <option value="enthusiastic">🚀 Enthusiastic</option>
                                     <option value="helpful">🤝 Helpful</option>
+                                    <option value="custom">✏️ Custom</option>
                                 </select>
                                 <small class="form-hint">How should the AI communicate?</small>
+                                <div id="custom-tone-wrap" class="form-group mt-2" style="display: none;">
+                                    <label for="custom_tone" class="form-label text-sm">Custom tone description</label>
+                                    <textarea id="custom_tone" name="custom_tone" class="form-control" rows="3"
+                                              placeholder="e.g. Formal but warm, use British English. Always sign off with 'Cheers'."></textarea>
+                                    <small class="form-hint">Describe how you want the AI to sound. This is used when Communication Tone is set to Custom.</small>
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -148,6 +155,7 @@
                                     <li><strong>Casual:</strong> Relaxed, conversational, informal</li>
                                     <li><strong>Enthusiastic:</strong> Energetic, positive, excited</li>
                                     <li><strong>Helpful:</strong> Solution-focused, asks clarifying questions</li>
+                                    <li><strong>Custom:</strong> Use the custom tone description you enter below</li>
                                 </ul>
                             </div>
                         </div>
@@ -385,6 +393,12 @@ async function loadProfile() {
     }
 }
 
+function toggleCustomTone() {
+    const tone = document.getElementById('tone').value;
+    const wrap = document.getElementById('custom-tone-wrap');
+    if (wrap) wrap.style.display = tone === 'custom' ? 'block' : 'none';
+}
+
 function populateForm(profile) {
     document.getElementById('brand_name').value = profile.brand_name || '';
     document.getElementById('business_type').value = profile.business_type || '';
@@ -392,12 +406,15 @@ function populateForm(profile) {
     document.getElementById('pricing').value = profile.pricing || '';
     document.getElementById('about_business').value = profile.about_business || '';
     document.getElementById('tone').value = profile.tone || 'friendly';
+    const customToneEl = document.getElementById('custom_tone');
+    if (customToneEl) customToneEl.value = profile.custom_tone || '';
     document.getElementById('language').value = profile.language || 'en';
     document.getElementById('custom_rules').value = Array.isArray(profile.custom_rules) 
         ? profile.custom_rules.join('\n') 
         : (profile.custom_rules || '');
     document.getElementById('custom_prompt').value = profile.custom_prompt || '';
     document.getElementById('enable_memory').checked = profile.enable_memory !== false;
+    toggleCustomTone();
 }
 
 async function loadMemoryStats() {
@@ -431,6 +448,8 @@ document.getElementById('aiProfileForm').addEventListener('submit', async (e) =>
     formData.append('pricing', document.getElementById('pricing').value);
     formData.append('about_business', document.getElementById('about_business').value);
     formData.append('tone', document.getElementById('tone').value);
+    const customToneEl = document.getElementById('custom_tone');
+    formData.append('custom_tone', customToneEl ? customToneEl.value : '');
     formData.append('language', document.getElementById('language').value);
     formData.append('custom_rules', document.getElementById('custom_rules').value);
     formData.append('custom_prompt', document.getElementById('custom_prompt').value);

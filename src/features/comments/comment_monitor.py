@@ -8,6 +8,7 @@ from threading import Thread, Event
 from ...services.account_service import AccountService
 from ...api.instagram_client import InstagramClient
 from ...utils.logger import get_logger
+from ...utils.exceptions import AccountError
 from .comment_service import CommentService
 from .comment_to_dm_service import CommentToDMService
 
@@ -53,7 +54,15 @@ class CommentMonitor:
         Returns:
             List of media posts
         """
-        client = self.account_service.get_client(account_id)
+        try:
+            client = self.account_service.get_client(account_id)
+        except AccountError as e:
+            logger.warning(
+                "Comment monitor: account/client not found, skipping media fetch",
+                account_id=account_id,
+                error=str(e),
+            )
+            return []
         
         try:
             response = client._make_request(
@@ -103,7 +112,16 @@ class CommentMonitor:
         while not stop_event.is_set():
             try:
                 # Check if monitoring is enabled for this account
-                account = self.account_service.get_account(account_id)
+                try:
+                    account = self.account_service.get_account(account_id)
+                except AccountError as e:
+                    logger.warning(
+                        "Comment monitor: account not found, skipping cycle",
+                        account_id=account_id,
+                        error=str(e),
+                    )
+                    stop_event.wait(timeout=self.check_interval_seconds)
+                    continue
                 
                 # Check if Comment-to-DM is enabled
                 is_dm_enabled = account.comment_to_dm and account.comment_to_dm.enabled
@@ -148,7 +166,16 @@ class CommentMonitor:
                     )
                     
                     # Filter out own comments
-                    account = self.account_service.get_account(account_id)
+                    try:
+                        account = self.account_service.get_account(account_id)
+                    except AccountError as e:
+                        logger.warning(
+                            "Comment monitor: account not found for post, skipping post",
+                            account_id=account_id,
+                            media_id=media_id,
+                            error=str(e),
+                        )
+                        continue
                     other_users_comments = [
                         c for c in comments
                         if c.get("username", "").lower() != account.username.lower()
@@ -312,10 +339,15 @@ class CommentMonitor:
         if account_id in self.stop_events:
             self.stop_events[account_id].set()
         
-        # Wait for thread to finish
+        # Wait for thread to finish (but don't block too long)
         if account_id in self.monitor_threads:
             thread = self.monitor_threads[account_id]
-            thread.join(timeout=5)
+            thread.join(timeout=2)
+            if thread.is_alive():
+                logger.warning(
+                    "Comment monitor thread still alive after timeout, continuing shutdown",
+                    account_id=account_id,
+                )
             del self.monitor_threads[account_id]
         
         logger.info("Stopped comment monitoring", account_id=account_id)

@@ -63,7 +63,10 @@ def stop_warming_scheduler() -> None:
     
     _stop.set()
     if _thread is not None:
-        _thread.join(timeout=5)
+        # Don't wait too long - daemon thread will exit with main process
+        _thread.join(timeout=2)
+        if _thread.is_alive():
+            logger.warning("Warming scheduler thread still alive after timeout, continuing shutdown")
         _thread = None
     
     # Clear all scheduled jobs

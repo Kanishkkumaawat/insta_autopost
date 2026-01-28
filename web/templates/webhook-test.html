@@ -1,0 +1,418 @@
+{% extends "layout.html" %}
+
+{% block title %}Webhook Test - InstaForge{% endblock %}
+
+{% block page_title %}Webhook & AI DM Test{% endblock %}
+
+{% block content %}
+<div class="webhook-test-page">
+    <div class="page-header">
+        <div class="header-actions">
+            <button id="refresh-status" class="btn btn-primary">
+                <span class="icon">🔄</span> Refresh Status
+            </button>
+            <button id="test-webhook" class="btn btn-secondary">
+                <span class="icon">🧪</span> Test Webhook
+            </button>
+        </div>
+    </div>
+
+    <!-- Webhook Configuration -->
+    <div class="card">
+        <h2>📡 Webhook Configuration</h2>
+        <div id="webhook-config" class="loading">Loading webhook configuration...</div>
+    </div>
+
+    <!-- AI DM Status -->
+    <div class="card">
+        <h2>🤖 AI DM Auto-Reply Status</h2>
+        <div id="ai-dm-status" class="loading">Loading AI DM status...</div>
+    </div>
+
+    <!-- Test Webhook Event -->
+    <div class="card">
+        <h2>🧪 Test Webhook Event</h2>
+        <div class="form-group">
+            <label class="form-label">Select Account</label>
+            <select id="test-account-select" class="form-control">
+                <option value="">Loading accounts...</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Test Message</label>
+            <input type="text" id="test-message" class="form-control" placeholder="Hello, test message" value="Hello, this is a test message">
+        </div>
+        <div class="form-group">
+            <label class="form-label">User ID (optional)</label>
+            <input type="text" id="test-user-id" class="form-control" placeholder="test_user_123">
+        </div>
+        <button id="send-test-webhook" class="btn btn-primary">Send Test Webhook Event</button>
+        <div id="test-result" class="mt-3"></div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="card">
+        <h2>📋 How to Test</h2>
+        <div class="instructions">
+            <h3>1. Check Configuration</h3>
+            <ul>
+                <li>Verify webhook callback URL is correct in Meta App Dashboard</li>
+                <li>Ensure verify token matches</li>
+                <li>Check that AI DM is enabled for your account</li>
+            </ul>
+
+            <h3>2. Test via Webhook</h3>
+            <ul>
+                <li>Use the "Test Webhook" button above to simulate an incoming DM</li>
+                <li>Or send a real DM from another Instagram account to your business account</li>
+                <li>Check logs for webhook processing</li>
+            </ul>
+
+            <h3>3. Verify Response</h3>
+            <ul>
+                <li>Check if AI reply was generated</li>
+                <li>Verify reply was sent back via Instagram API</li>
+                <li>Check rate limiting (max 10 replies per user per day)</li>
+            </ul>
+
+            <h3>4. Troubleshooting</h3>
+            <ul>
+                <li><strong>No reply:</strong> Check if AI DM is enabled for account</li>
+                <li><strong>OpenAI error:</strong> Verify OPENAI_API_KEY is set</li>
+                <li><strong>Webhook not received:</strong> Check callback URL in Meta App Dashboard</li>
+                <li><strong>24h window error:</strong> User must have messaged you first within 24 hours</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<style>
+.webhook-test-page {
+    padding: 20px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card h2 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 20px;
+}
+
+.status-item {
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    border-left: 3px solid #ccc;
+}
+
+.status-item.ok {
+    border-left-color: #10b981;
+}
+
+.status-item.error {
+    border-left-color: #ef4444;
+}
+
+.status-item.warning {
+    border-left-color: #f59e0b;
+}
+
+.status-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.status-value {
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.account-status {
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.account-status.enabled {
+    border-left: 4px solid #10b981;
+}
+
+.account-status.disabled {
+    border-left: 4px solid #6b7280;
+}
+
+.account-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.account-name {
+    font-weight: 600;
+    font-size: 16px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge.enabled {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.disabled {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #6b7280;
+}
+
+.error-message {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.success-message {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.instructions h3 {
+    margin-top: 20px;
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.instructions ul {
+    margin-left: 20px;
+    margin-bottom: 16px;
+}
+
+.instructions li {
+    margin-bottom: 4px;
+}
+
+.code-block {
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 14px;
+    overflow-x: auto;
+    margin: 8px 0;
+}
+</style>
+
+<script>
+let refreshInterval = null;
+
+async function loadWebhookConfig() {
+    const container = document.getElementById('webhook-config');
+    container.innerHTML = '<div class="loading">Loading webhook configuration...</div>';
+    
+    try {
+        const response = await fetch('/api/webhooks/callback-url');
+        const data = await response.json();
+        
+        const html = `
+            <div class="status-item ${data.callback_url ? 'ok' : 'error'}">
+                <div class="status-label">Callback URL</div>
+                <div class="status-value">${data.callback_url || 'Not configured'}</div>
+                <div class="code-block" style="margin-top: 8px;">${data.callback_url || 'N/A'}</div>
+            </div>
+            <div class="status-item ok">
+                <div class="status-label">Verify Token</div>
+                <div class="status-value">${data.verify_token || 'Not set'}</div>
+                <div class="code-block" style="margin-top: 8px;">${data.verify_token || 'N/A'}</div>
+            </div>
+            <div class="status-item ${data.production_url ? 'ok' : 'warning'}">
+                <div class="status-label">Production URL</div>
+                <div class="status-value">${data.production_url || 'Not set'}</div>
+                <div class="code-block" style="margin-top: 8px;">${data.production_url || 'N/A'}</div>
+            </div>
+            ${data.note ? `<div class="status-item warning" style="margin-top: 12px;"><div class="status-value">${data.note}</div></div>` : ''}
+        `;
+        
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading webhook config:', error);
+        container.innerHTML = '<div class="error-message">Error loading webhook configuration: ' + error.message + '</div>';
+    }
+}
+
+async function loadAIDMStatus() {
+    const container = document.getElementById('ai-dm-status');
+    container.innerHTML = '<div class="loading">Loading AI DM status...</div>';
+    
+    try {
+        const response = await fetch('/api/test/ai-dm-status');
+        const data = await response.json();
+        
+        if (!data.openai_configured) {
+            container.innerHTML = '<div class="error-message">⚠️ OpenAI API key not configured. Set OPENAI_API_KEY environment variable.</div>';
+            return;
+        }
+        
+        if (data.accounts.length === 0) {
+            container.innerHTML = '<div class="status-item warning">No accounts configured</div>';
+            return;
+        }
+        
+        const accountsHtml = data.accounts.map(acc => {
+            const enabled = acc.ai_dm_enabled;
+            return `
+                <div class="account-status ${enabled ? 'enabled' : 'disabled'}">
+                    <div class="account-header">
+                        <div class="account-name">${acc.username || acc.account_id}</div>
+                        <span class="status-badge ${enabled ? 'enabled' : 'disabled'}">
+                            ${enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                    </div>
+                    <div class="status-value" style="margin-top: 8px;">
+                        <strong>Account ID:</strong> ${acc.account_id}<br>
+                        <strong>Instagram Business ID:</strong> ${acc.instagram_business_id || 'Not set'}<br>
+                        <strong>AI DM Config:</strong> ${acc.has_ai_dm_config ? 'Yes' : 'No'}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = accountsHtml;
+        
+        // Also populate account selector for test
+        const select = document.getElementById('test-account-select');
+        select.innerHTML = '<option value="">Select account...</option>' + 
+            data.accounts.map(acc => 
+                `<option value="${acc.account_id}" ${acc.ai_dm_enabled ? '' : 'disabled'}>
+                    ${acc.username || acc.account_id} ${acc.ai_dm_enabled ? '' : '(AI DM disabled)'}
+                </option>`
+            ).join('');
+    } catch (error) {
+        console.error('Error loading AI DM status:', error);
+        container.innerHTML = '<div class="error-message">Error loading AI DM status: ' + error.message + '</div>';
+    }
+}
+
+async function testWebhook() {
+    const accountId = document.getElementById('test-account-select').value;
+    const message = document.getElementById('test-message').value;
+    const userId = document.getElementById('test-user-id').value || 'test_user_123';
+    const resultDiv = document.getElementById('test-result');
+    
+    if (!accountId) {
+        resultDiv.innerHTML = '<div class="error-message">Please select an account</div>';
+        return;
+    }
+    
+    if (!message) {
+        resultDiv.innerHTML = '<div class="error-message">Please enter a test message</div>';
+        return;
+    }
+    
+    resultDiv.innerHTML = '<div class="loading">Sending test webhook event...</div>';
+    
+    try {
+        const formData = new FormData();
+        formData.append('message', message);
+        formData.append('user_id', userId);
+        formData.append('account_id', accountId);
+        
+        const response = await fetch('/api/test/ai-reply', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            resultDiv.innerHTML = `
+                <div class="success-message">
+                    <strong>✅ Test successful!</strong><br>
+                    <strong>Reply:</strong> ${data.reply_text || 'No reply generated'}<br>
+                    <strong>Status:</strong> ${data.reply_status || 'unknown'}<br>
+                    ${data.reason ? `<strong>Reason:</strong> ${data.reason}` : ''}
+                </div>
+            `;
+        } else {
+            resultDiv.innerHTML = `
+                <div class="error-message">
+                    <strong>❌ Test failed</strong><br>
+                    ${data.error || data.detail || 'Unknown error'}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error testing webhook:', error);
+        resultDiv.innerHTML = '<div class="error-message">Error: ' + error.message + '</div>';
+    }
+}
+
+document.getElementById('refresh-status').addEventListener('click', () => {
+    loadWebhookConfig();
+    loadAIDMStatus();
+});
+
+document.getElementById('test-webhook').addEventListener('click', () => {
+    document.getElementById('test-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    testWebhook();
+});
+
+document.getElementById('send-test-webhook').addEventListener('click', testWebhook);
+
+// Load on page load
+loadWebhookConfig();
+loadAIDMStatus();
+
+// Auto-refresh every 30 seconds
+refreshInterval = setInterval(() => {
+    loadWebhookConfig();
+    loadAIDMStatus();
+}, 30000);
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

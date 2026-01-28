@@ -40,9 +40,14 @@ def _build_post(raw: dict):
             children.append(PostMedia(media_type=ct, url=HttpUrl(url)))
         media = PostMedia(media_type="carousel", children=children, caption=caption)
     else:
-        # Infer from URL so .mp4 stored as "image" still uses video_url (fixes timeout)
-        # This handles URLs with query parameters like ?t=timestamp
-        inferred = _infer_media_type(urls[0])
+        # Preserve reels type if stored as reels
+        if media_type == "reels":
+            inferred = "reels"
+        else:
+            # Infer from URL so .mp4 stored as "image" still uses video_url (fixes timeout)
+            # This handles URLs with query parameters like ?t=timestamp
+            inferred = _infer_media_type(urls[0])
+        
         media = PostMedia(media_type=inferred, url=HttpUrl(urls[0]), caption=caption)
         
         logger.debug(
@@ -133,6 +138,9 @@ def stop_scheduled_publisher() -> None:
     global _thread
     _stop.set()
     if _thread is not None:
-        _thread.join(timeout=5)
+        # Don't wait too long - daemon thread will exit with main process
+        _thread.join(timeout=2)
+        if _thread.is_alive():
+            logger.warning("Scheduled publisher thread still alive after timeout, continuing shutdown")
         _thread = None
     logger.info("Scheduled post publisher stopped")

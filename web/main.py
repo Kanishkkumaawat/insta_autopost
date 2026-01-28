@@ -267,13 +267,6 @@ async def webhook_instagram_events(request: Request):
     import json
     webhook_logger = get_logger(__name__)
     
-    # Log immediately when request arrives - this is critical for debugging
-    # Also print to console for immediate visibility
-    print("=" * 80)
-    print(f"[WEBHOOK] POST request received at {request.url}")
-    print(f"[WEBHOOK] Client: {request.client.host if request.client else 'Unknown'}")
-    print("=" * 80)
-    
     webhook_logger.info(
         "=== WEBHOOK POST RECEIVED ===",
         method=request.method,
@@ -286,9 +279,7 @@ async def webhook_instagram_events(request: Request):
     # Try to read body
     try:
         body_bytes = await request.body()
-        print(f"[WEBHOOK] Body size: {len(body_bytes)} bytes")
         body_preview = body_bytes[:500].decode('utf-8', errors='ignore') if body_bytes else None
-        print(f"[WEBHOOK] Body preview: {body_preview}")
         
         webhook_logger.info(
             "Webhook body received",
@@ -301,13 +292,6 @@ async def webhook_instagram_events(request: Request):
             body = json.loads(body_bytes)
         else:
             body = {}
-            
-        print(f"[WEBHOOK] Body parsed: {type(body).__name__}")
-        if isinstance(body, dict):
-            print(f"[WEBHOOK] Keys: {list(body.keys())}")
-            print(f"[WEBHOOK] Object: {body.get('object')}")
-            if body.get("entry"):
-                print(f"[WEBHOOK] Entry count: {len(body.get('entry', []))}")
         
         webhook_logger.info(
             "Instagram webhook body parsed",
@@ -330,19 +314,14 @@ async def webhook_instagram_events(request: Request):
     # Process webhook
     try:
         if instaforge_app is None:
-            print("[WEBHOOK] ERROR: InstaForge app not initialized")
             webhook_logger.error("InstaForge app not initialized")
             return JSONResponse(status_code=500, content={"status": "error", "detail": "App not initialized"})
         
-        print("[WEBHOOK] Processing webhook payload...")
         process_webhook_payload(body, instaforge_app)
-        print("[WEBHOOK] Processing completed successfully")
         webhook_logger.info("Instagram webhook processing completed successfully")
     except Exception as e:
-        print(f"[WEBHOOK] ERROR during processing: {e}")
         webhook_logger.exception("Instagram webhook processing error", error=str(e))
     
-    print("[WEBHOOK] Returning OK response")
     return JSONResponse(status_code=200, content={"status": "ok"})
 
 # Global InstaForge app instance
@@ -382,6 +361,11 @@ async def startup_event():
         print("Starting warming scheduler...")
         start_warming_scheduler(instaforge_app)
         print("Warming scheduler started - warming actions will run at scheduled time")
+        
+        # Start account health monitoring
+        if instaforge_app.account_health_service:
+            instaforge_app.account_health_service.start_monitoring()
+            print("Account health monitoring started")
     except Exception as e:
         print(f"Warning: Failed to initialize InstaForge app: {e}")
 
@@ -391,18 +375,57 @@ async def shutdown_event():
     """Cleanup on shutdown"""
     global instaforge_app
     
+    logger.info("Shutdown event triggered - stopping all services")
+    
     # Stop Cloudflare tunnel (only if it was started in development)
     ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
     if ENVIRONMENT == "development":
-        stop_cloudflare()
+        try:
+            stop_cloudflare()
+        except Exception as e:
+            logger.warning("Error stopping Cloudflare tunnel", error=str(e))
     
     if instaforge_app:
-        stop_scheduled_publisher()
-        stop_daily_token_refresh_job()
-        stop_warming_scheduler()
-        if instaforge_app.comment_monitor:
-            instaforge_app.comment_monitor.stop_monitoring_all_accounts()
-        instaforge_app.shutdown()
+        # Stop all background services (order matters - stop monitors first)
+        try:
+            if instaforge_app.comment_monitor:
+                logger.info("Stopping comment monitor...")
+                instaforge_app.comment_monitor.stop_monitoring_all_accounts()
+        except Exception as e:
+            logger.warning("Error stopping comment monitor", error=str(e))
+        
+        try:
+            if instaforge_app.account_health_service:
+                logger.info("Stopping health monitoring...")
+                instaforge_app.account_health_service.stop_monitoring()
+        except Exception as e:
+            logger.warning("Error stopping health monitoring", error=str(e))
+        
+        try:
+            logger.info("Stopping scheduled publisher...")
+            stop_scheduled_publisher()
+        except Exception as e:
+            logger.warning("Error stopping scheduled publisher", error=str(e))
+        
+        try:
+            logger.info("Stopping token refresher...")
+            stop_daily_token_refresh_job()
+        except Exception as e:
+            logger.warning("Error stopping token refresher", error=str(e))
+        
+        try:
+            logger.info("Stopping warming scheduler...")
+            stop_warming_scheduler()
+        except Exception as e:
+            logger.warning("Error stopping warming scheduler", error=str(e))
+        
+        try:
+            logger.info("Shutting down app...")
+            instaforge_app.shutdown()
+        except Exception as e:
+            logger.warning("Error in app shutdown", error=str(e))
+    
+    logger.info("Shutdown complete")
 
 
 # Route handlers for frontend pages
@@ -424,6 +447,20 @@ async def posts_page(request: Request):
 async def logs_page(request: Request):
     """Logs viewer page"""
     content = render_template("logs.html", {"request": request})
+    return HTMLResponse(content=content)
+
+
+@app.get("/accounts", response_class=HTMLResponse)
+async def accounts_page(request: Request):
+    """Account status dashboard page"""
+    content = render_template("accounts.html", {"request": request})
+    return HTMLResponse(content=content)
+
+
+@app.get("/webhook-test", response_class=HTMLResponse)
+async def webhook_test_page(request: Request):
+    """Webhook and AI DM test page"""
+    content = render_template("webhook-test.html", {"request": request})
     return HTMLResponse(content=content)
 
 

@@ -105,7 +105,11 @@ class PromptBuilder:
         
         # Add tone customization
         tone = profile.get("tone", "friendly")
-        if tone != "friendly":
+        if tone == "custom":
+            custom_tone_text = (profile.get("custom_tone") or "").strip()
+            if custom_tone_text:
+                prompt_parts.append(f"\n\nTone (custom): {custom_tone_text}")
+        elif tone != "friendly":
             tone_instructions = {
                 "professional": "Use formal, business-like language. Avoid casual expressions.",
                 "casual": "Use very casual, relaxed language. Be more conversational.",

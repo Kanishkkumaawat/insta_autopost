@@ -227,6 +227,7 @@ class InstagramClient:
         caption: str = "",
         location_id: Optional[str] = None,
         user_tags: Optional[list] = None,
+        media_type: Optional[str] = None,
     ) -> str:
         """
         Create a media container for posting
@@ -272,6 +273,10 @@ class InstagramClient:
         
         params = {"caption": caption}
         
+        # Handle media_type parameter (for reels)
+        if media_type:
+            params["media_type"] = media_type.upper()
+        
         if image_url:
             params["image_url"] = image_url
             logger.info(
@@ -280,12 +285,15 @@ class InstagramClient:
                 url_length=len(image_url),
             )
         elif video_url:
-            params["media_type"] = "VIDEO"
+            # If media_type not specified, default to VIDEO
+            if not media_type:
+                params["media_type"] = "VIDEO"
             params["video_url"] = video_url
             logger.info(
                 "Creating video media container",
                 video_url=video_url,
                 url_length=len(video_url),
+                media_type=params.get("media_type", "VIDEO"),
             )
         else:
             raise InstagramAPIError("Either image_url or video_url must be provided")
@@ -359,15 +367,27 @@ class InstagramClient:
             # If error 9004 or 2207067, provide more helpful error message
             if error_code == 9004 or error_subcode == 2207067:
                 is_video = media_url and any(ext in media_url.lower() for ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm'])
-                if is_video:
+                is_reels = params.get("media_type") == "REELS"
+                
+                if is_video or is_reels:
+                    media_type_name = "reels" if is_reels else "video"
                     solution = (
-                        "SOLUTION: Use 'Post by URL' with an external host:\n"
-                        "1) Upload video to Cloudinary (https://cloudinary.com) - recommended\n"
-                        "2) Or use AWS S3, Imgur, Firebase Storage\n"
-                        "3) Copy the direct video URL\n"
-                        "4) In InstaForge: Enable 'Post by URL' and paste the URL\n"
-                        "\n"
-                        "Cloudflare tunnels are unreliable for videos. External hosts work reliably."
+                        f"SOLUTION for {media_type_name.upper()} posts:\n"
+                        f"1) Upload your video to Cloudinary (https://cloudinary.com) - RECOMMENDED\n"
+                        f"2) Or use AWS S3 (with public access), Firebase Storage, or Imgur\n"
+                        f"3) Copy the direct HTTPS video URL from the hosting service\n"
+                        f"4) In InstaForge: Enable 'Post by URL' and paste the URL\n"
+                        f"\n"
+                        f"❌ DO NOT USE:\n"
+                        f"• Cloudflare tunnels (trycloudflare.com) - unreliable for videos\n"
+                        f"• Ngrok - unreliable for videos\n"
+                        f"• Localhost URLs - Instagram cannot access them\n"
+                        f"\n"
+                        f"✅ RECOMMENDED HOSTS:\n"
+                        f"• Cloudinary (best for videos/reels)\n"
+                        f"• AWS S3 (reliable, scalable)\n"
+                        f"• Firebase Storage (Google Cloud)\n"
+                        f"• Imgur (for smaller videos < 200MB)"
                     )
                 else:
                     solution = (
@@ -377,24 +397,36 @@ class InstagramClient:
                 raise InstagramAPIError(
                     f"Instagram cannot access the media URL (error {error_code}/{error_subcode}).\n"
                     f"This usually means:\n"
-                    f"1) Cloudflare's trycloudflare.com is blocking Instagram's bot\n"
+                    f"1) The hosting service is blocking Instagram's bot/crawler\n"
                     f"2) The URL is returning HTML instead of the media file\n"
-                    f"3) The server is blocking Instagram's crawler\n"
+                    f"3) The server requires authentication or has CORS restrictions\n"
+                    f"4) For videos/reels: The hosting service is unreliable (Cloudflare/ngrok)\n"
                     f"\n"
                     f"{solution}\n"
+                    f"\n"
                     f"URL: {media_url}\n"
                     f"Original error: {error_type}: {error_message} (code: {error_code})",
                     error_code=error_code,
                     error_subcode=error_subcode,
                 )
-            # Timeout -2 / 2207003: Instagram timed out fetching/processing media (often video)
+            # Timeout -2 / 2207003: Instagram timed out fetching/processing media (often video/reels)
             if error_code == -2 or error_subcode == 2207003:
+                is_reels = params.get("media_type") == "REELS"
+                media_type_name = "reels" if is_reels else "video"
                 raise InstagramAPIError(
-                    f"Instagram timed out fetching/processing the media (error {error_code}/{error_subcode}). "
-                    f"For videos, this often means:\n"
-                    f"1) File is too large or slow to serve over Cloudflare tunnel\n"
-                    f"2) URL was sent as image instead of video (now fixed: .mp4 uses video container)\n\n"
-                    f"Solution: Use production hosting (S3, Cloudinary, etc.) for videos, or use a shorter/smaller clip.\n"
+                    f"Instagram timed out fetching/processing the {media_type_name} (error {error_code}/{error_subcode}).\n"
+                    f"\n"
+                    f"This usually means:\n"
+                    f"1) The video file is too large or takes too long to download\n"
+                    f"2) The hosting service (Cloudflare/ngrok) is too slow for Instagram's crawler\n"
+                    f"3) The video URL is not directly accessible (requires authentication/redirects)\n"
+                    f"\n"
+                    f"✅ SOLUTION:\n"
+                    f"• Use Cloudinary, AWS S3, or Firebase Storage (fast, reliable CDN)\n"
+                    f"• Ensure video URL is direct (no redirects, no authentication)\n"
+                    f"• For reels: Video must be 3-15 minutes, 9:16 aspect ratio, MP4/MOV format\n"
+                    f"• Maximum file size: 1GB\n"
+                    f"\n"
                     f"URL: {media_url}\n"
                     f"Original error: {str(e)}",
                     error_code=error_code,

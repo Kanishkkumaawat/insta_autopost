@@ -1,6 +1,7 @@
 import uvicorn
 import os
 import sys
+import signal
 
 if __name__ == "__main__":
     """
@@ -21,10 +22,24 @@ if __name__ == "__main__":
     print(f"Starting InstaForge from {root_dir}...")
     print(f"Environment: {ENVIRONMENT}")
     print(f"Access the dashboard at http://{HOST}:{PORT}")
+    print("Press CTRL+C to stop the server")
     
-    # Run the FastAPI app
-    # web.main:app initializes the InstaForgeApp and starts background services on startup
-    if ENVIRONMENT == "production" and WORKERS > 1:
-        uvicorn.run("web.main:app", host=HOST, port=PORT, workers=WORKERS, log_level="info")
-    else:
-        uvicorn.run("web.main:app", host=HOST, port=PORT, reload=RELOAD, log_level="info" if ENVIRONMENT == "production" else "debug")
+    # Handle graceful shutdown on SIGINT (Ctrl+C) and SIGTERM
+    def signal_handler(sig, frame):
+        print("\n\nShutdown signal received. Stopping server...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        # Run the FastAPI app
+        # web.main:app initializes the InstaForgeApp and starts background services on startup
+        if ENVIRONMENT == "production" and WORKERS > 1:
+            uvicorn.run("web.main:app", host=HOST, port=PORT, workers=WORKERS, log_level="info")
+        else:
+            uvicorn.run("web.main:app", host=HOST, port=PORT, reload=RELOAD, log_level="info" if ENVIRONMENT == "production" else "debug")
+    except KeyboardInterrupt:
+        print("\n\nShutdown complete.")
+        sys.exit(0)
