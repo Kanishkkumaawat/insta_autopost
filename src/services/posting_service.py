@@ -232,8 +232,8 @@ class PostingService:
                     container_id=container_id,
                     media_type=post.media.media_type,
                 )
-                # Reels may need more time to process
-                wait_time = 10 if post.media.media_type == "reels" else 5
+                # Same initial wait for both video and reels (Instagram needs time to fetch/process)
+                wait_time = 10
                 time.sleep(wait_time)
                 
                 # Check status and wait if needed

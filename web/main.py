@@ -506,9 +506,17 @@ async def shutdown_event():
         except Exception as e:
             logger.warning("Error stopping warming scheduler", error=str(e))
         
+        # Close browser automation with await (we're in async context; sync close_all uses run_until_complete on same loop → fails)
+        try:
+            if getattr(instaforge_app, "browser_wrapper", None) and instaforge_app.browser_wrapper:
+                logger.info("Closing browser automation...")
+                await instaforge_app.browser_wrapper.browser_service.close_all()
+        except Exception as e:
+            logger.warning("Error closing browser automation", error=str(e))
+        
         try:
             logger.info("Shutting down app...")
-            instaforge_app.shutdown()
+            instaforge_app.shutdown(skip_browser_close=True)
         except Exception as e:
             logger.warning("Error in app shutdown", error=str(e))
     
@@ -520,6 +528,13 @@ async def shutdown_event():
 async def index(request: Request):
     """Main posting page"""
     content = render_template("index.html", {"request": request})
+    return HTMLResponse(content=content)
+
+
+@app.get("/schedule", response_class=HTMLResponse)
+async def schedule_page(request: Request):
+    """Scheduled posts queue page"""
+    content = render_template("schedule.html", {"request": request})
     return HTMLResponse(content=content)
 
 

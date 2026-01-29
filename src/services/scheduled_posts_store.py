@@ -134,3 +134,40 @@ def mark_failed(post_id: str, error: str) -> None:
             break
     save_scheduled(posts)
     logger.warning("Scheduled post marked as failed", post_id=post_id, error=error)
+
+
+def get_scheduled_post(post_id: str) -> Optional[Dict[str, Any]]:
+    """Return a single scheduled post by id, or None."""
+    for p in load_scheduled():
+        if p.get("id") == post_id:
+            return p
+    return None
+
+
+def set_scheduled_status(post_id: str, status: str, error_message: Optional[str] = None) -> bool:
+    """Set status of a scheduled post. Returns True if found and updated."""
+    posts = load_scheduled()
+    for p in posts:
+        if p.get("id") == post_id:
+            p["status"] = status
+            if error_message is not None:
+                p["error_message"] = error_message
+            if status == "scheduled":
+                p.pop("error_message", None)
+                p.pop("failed_at", None)
+            elif status == "failed":
+                p["failed_at"] = datetime.utcnow().isoformat()
+            save_scheduled(posts)
+            return True
+    return False
+
+
+def cancel_scheduled(post_id: str) -> bool:
+    """Remove a scheduled post from the queue. Returns True if found and removed."""
+    posts = load_scheduled()
+    kept = [p for p in posts if p.get("id") != post_id]
+    if len(kept) == len(posts):
+        return False
+    save_scheduled(kept)
+    logger.info("Scheduled post cancelled", post_id=post_id)
+    return True

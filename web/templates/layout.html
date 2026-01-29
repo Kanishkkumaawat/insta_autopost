@@ -17,6 +17,9 @@
                 <a href="/" class="nav-item {% if request.url.path == '/' %}active{% endif %}">
                     <span class="icon">📝</span> Posting
                 </a>
+                <a href="/schedule" class="nav-item {% if request.url.path == '/schedule' %}active{% endif %}">
+                    <span class="icon">📅</span> Schedule
+                </a>
                 <a href="/posts" class="nav-item {% if request.url.path == '/posts' %}active{% endif %}">
                     <span class="icon">📚</span> History
                 </a>

@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+
+{% block title %}Schedule{% endblock %}
+{% block page_title %}Scheduled Posts{% endblock %}
+
+{% block actions %}
+<select id="schedule-status-filter" class="form-control" style="width: auto; display: inline-block;" onchange="loadScheduled()">
+    <option value="">All (scheduled + failed)</option>
+    <option value="scheduled">Scheduled</option>
+    <option value="failed">Failed</option>
+</select>
+<button class="btn btn-secondary" onclick="loadScheduled()">
+    <span>🔄</span> Refresh
+</button>
+{% endblock %}
+
+{% block content %}
+<div id="schedule-container">
+    <div class="text-muted">Loading scheduled queue...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/schedule.js"></script>
+{% endblock %}

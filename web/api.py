@@ -29,7 +29,13 @@ from src.models.post import PostMedia, Post, PostStatus
 from src.models.account import Account, ProxyConfig, WarmingConfig, CommentToDMConfig, AIDMConfig
 from src.app import InstaForgeApp
 from src.utils.config import config_manager, Settings
-from src.services.scheduled_posts_store import add_scheduled
+from src.services.scheduled_posts_store import (
+    add_scheduled,
+    load_scheduled,
+    get_scheduled_post,
+    set_scheduled_status,
+    cancel_scheduled,
+)
 from src.services.batch_upload_service import (
     extract_zip,
     validate_file,
@@ -1169,6 +1175,62 @@ async def get_published_posts(request: Request, limit: int = 20, account_id: Opt
         return {"posts": posts, "count": len(posts)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch posts: {str(e)}")
+
+
+@router.get("/posts/scheduled")
+async def list_scheduled_posts(
+    account_id: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    app: InstaForgeApp = Depends(get_app),
+    current_user: User = Depends(require_auth),
+):
+    """List scheduled and failed posts (queue). Optional filters: account_id, status (scheduled|failed)."""
+    posts = load_scheduled()
+    if account_id:
+        posts = [p for p in posts if p.get("account_id") == account_id]
+    if status_filter and status_filter.lower() in ("scheduled", "failed"):
+        posts = [p for p in posts if (p.get("status") or "").lower() == status_filter.lower()]
+    # Sort by scheduled_time ascending (soonest first)
+    def _sort_key(p):
+        raw = (p.get("scheduled_time") or "").replace("Z", "").split("+")[0].strip()
+        try:
+            return datetime.fromisoformat(raw)
+        except Exception:
+            return datetime.min
+    posts = sorted(posts, key=_sort_key)
+    return {"posts": posts, "count": len(posts)}
+
+
+@router.patch("/posts/scheduled/{post_id}/retry")
+async def retry_scheduled_post(
+    post_id: str,
+    app: InstaForgeApp = Depends(get_app),
+    current_user: User = Depends(require_auth),
+):
+    """Set a failed scheduled post back to 'scheduled' so it will be retried when due."""
+    p = get_scheduled_post(post_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Scheduled post not found")
+    if (p.get("status") or "").lower() != "failed":
+        raise HTTPException(status_code=400, detail="Only failed posts can be retried")
+    ok = set_scheduled_status(post_id, "scheduled")
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to update post status")
+    return {"status": "success", "post_id": post_id, "message": "Post requeued for publishing when due"}
+
+
+@router.delete("/posts/scheduled/{post_id}")
+async def delete_scheduled_post(
+    post_id: str,
+    app: InstaForgeApp = Depends(get_app),
+    current_user: User = Depends(require_auth),
+):
+    """Remove a scheduled post from the queue (cancel)."""
+    ok = cancel_scheduled(post_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Scheduled post not found")
+    return {"status": "success", "post_id": post_id, "message": "Scheduled post cancelled"}
+
 
 @router.get("/logs")
 async def get_logs(lines: int = 100, level: Optional[str] = None):

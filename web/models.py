@@ -2,7 +2,29 @@
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+
+
+def _parse_scheduled_time(v):
+    """Parse datetime from API/frontend. Accepts YYYY-MM-DDTHH:mm or YYYY-MM-DDTHH:mm:ss (naive, server-local)."""
+    if v is None:
+        return None
+    if isinstance(v, datetime):
+        return v.replace(tzinfo=None) if v.tzinfo else v
+    if not isinstance(v, str) or not v.strip():
+        return None
+    s = v.strip().replace("Z", "").split("+")[0].strip()
+    if "." in s:
+        s = s.split(".")[0]
+    if not s:
+        return None
+    if len(s) == 16 and s[10] == "T":  # YYYY-MM-DDTHH:mm
+        s = s + ":00"
+    try:
+        dt = datetime.fromisoformat(s)
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    except Exception as e:
+        raise ValueError(f"Invalid scheduled_time format: use YYYY-MM-DDTHH:mm or YYYY-MM-DDTHH:mm:ss") from e
 
 
 class CreatePostRequest(BaseModel):
@@ -13,6 +35,11 @@ class CreatePostRequest(BaseModel):
     hashtags: List[str] = Field(default_factory=list)
     account_id: str
     scheduled_time: Optional[datetime] = None
+
+    @field_validator("scheduled_time", mode="before")
+    @classmethod
+    def parse_scheduled_time(cls, v):
+        return _parse_scheduled_time(v)
     # Auto-DM settings (for scheduled posts, these are stored and applied after publishing)
     auto_dm_enabled: Optional[bool] = False
     auto_dm_link: Optional[str] = Field(None, description="Link/file URL to send via DM")

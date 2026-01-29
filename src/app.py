@@ -314,8 +314,9 @@ class InstaForgeApp:
         
         return results
     
-    def shutdown(self):
-        """Gracefully shutdown the application"""
+    def shutdown(self, *, skip_browser_close: bool = False):
+        """Gracefully shutdown the application.
+        skip_browser_close: If True, caller has already closed browsers (e.g. web async shutdown)."""
         logger.info("Shutting down InstaForge application")
         
         # Stop health monitoring
@@ -326,8 +327,8 @@ class InstaForgeApp:
         if self.comment_monitor:
             self.comment_monitor.stop_monitoring_all_accounts()
         
-        # Close browser automation
-        if hasattr(self, 'browser_wrapper') and self.browser_wrapper:
+        # Close browser automation (skip when web app already awaited close_all in async shutdown)
+        if not skip_browser_close and hasattr(self, "browser_wrapper") and self.browser_wrapper:
             try:
                 self.browser_wrapper.close_all()
             except Exception as e:

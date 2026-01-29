@@ -92,7 +92,16 @@ def _run_once(app):
             scheduled_time=scheduled_time,
             url_preview=urls[0][:80] if urls else "no-url",
         )
-        
+
+        # Verify account still exists before attempting publish
+        try:
+            app.account_service.get_account(account_id)
+        except Exception as acc_err:
+            err = "Account no longer exists or was removed"
+            logger.warning("Skipping scheduled post: account not found", post_id=pid, account_id=account_id, error=str(acc_err))
+            mark_failed(pid, err)
+            continue
+
         try:
             post = _build_post(raw)
             logger.info(
