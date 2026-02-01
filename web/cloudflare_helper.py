@@ -139,6 +139,17 @@ def get_cloudflare_url() -> Optional[str]:
     return _cloudflare_url
 
 
+def get_current_public_base_url() -> str:
+    """Return current public base URL for background use (no request). Prefers BASE_URL/APP_URL, then Cloudflare tunnel."""
+    base = os.getenv("BASE_URL") or os.getenv("APP_URL")
+    if base:
+        return (base or "").strip().rstrip("/")
+    global _cloudflare_url
+    if _cloudflare_url:
+        return _cloudflare_url.rstrip("/")
+    return ""
+
+
 def get_base_url(request_base_url: str = "", request_headers=None) -> str:
     """Get base URL for serving uploads. Prefers BASE_URL, then proxy headers, then Cloudflare tunnel, then request."""
     import os

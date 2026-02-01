@@ -1,7 +1,8 @@
 """Web server entry point for InstaForge web dashboard"""
 
+import asyncio
+import logging
 import sys
-import signal
 import uvicorn
 from pathlib import Path
 
@@ -15,14 +16,38 @@ load_dotenv()
 from web.main import app
 from web.cloudflare_helper import start_cloudflare, stop_cloudflare
 
-# Global Cloudflare cleanup handler
-def cleanup_handler(signum, frame):
-    """Handle shutdown signals"""
-    from web.cloudinary_helper import is_cloudinary_configured
-    # Only stop Cloudflare if it was started (i.e., Cloudinary not configured)
-    if not is_cloudinary_configured():
-        stop_cloudflare()
-    sys.exit(0)
+
+class ShutdownExceptionFilter(logging.Filter):
+    """Suppress ERROR tracebacks for CancelledError/KeyboardInterrupt during CTRL+C shutdown."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.ERROR:
+            return True
+        exc_type, exc_val, _ = (record.exc_info or (None, None, None))[:3]
+        if exc_type is not None and exc_val is not None:
+            if isinstance(exc_val, (asyncio.CancelledError, KeyboardInterrupt)):
+                return False
+        msg = (record.getMessage() or "")
+        if "CancelledError" in msg or "KeyboardInterrupt" in msg:
+            return False
+        return True
+
+
+def _install_shutdown_log_filter():
+    """Install filter so CTRL+C doesn't flood the console with expected shutdown errors."""
+    f = ShutdownExceptionFilter()
+    for name in (
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.asgi",
+        "uvicorn.protocols.http.httptools_impl",
+        "starlette",
+    ):
+        logging.getLogger(name).addFilter(f)
+
+
+# No custom signal handlers: let uvicorn handle SIGINT/SIGTERM for graceful shutdown.
+# FastAPI shutdown_event (web/main.py) and the finally block below handle Cloudflare cleanup.
 
 
 if __name__ == "__main__":
@@ -30,10 +55,6 @@ if __name__ == "__main__":
     import os
     port = int(os.getenv("WEB_PORT", 8000))
     host = os.getenv("WEB_HOST", "0.0.0.0")
-    
-    # Register signal handlers for cleanup
-    signal.signal(signal.SIGINT, cleanup_handler)
-    signal.signal(signal.SIGTERM, cleanup_handler)
     
     print(f"Starting InstaForge Web Dashboard...")
     print(f"Local server will be available at: http://localhost:{port}")
@@ -56,6 +77,8 @@ if __name__ == "__main__":
             cloudflare_url = start_cloudflare(port)
         # No Cloudflare/Cloudinary warning messages — upload from disk goes to server; set BASE_URL in production
     print()
+
+    _install_shutdown_log_filter()
 
     try:
         uvicorn.run(

@@ -29,7 +29,7 @@ from src.models.post import PostMedia, Post, PostStatus
 from src.models.account import Account, ProxyConfig, WarmingConfig, CommentToDMConfig, AIDMConfig
 from src.app import InstaForgeApp
 from src.utils.config import config_manager, Settings
-from src.services.scheduled_posts_store import add_scheduled
+from src.services.scheduled_posts_store import add_scheduled, load_scheduled
 from src.services.batch_upload_service import (
     extract_zip,
     validate_file,
@@ -1214,6 +1214,47 @@ async def get_logs(lines: int = 100, level: Optional[str] = None):
         raise HTTPException(status_code=500, detail=f"Failed to read logs: {str(e)}")
 
 
+@router.get("/schedule/queue")
+async def get_schedule_queue(
+    current_user: User = Depends(require_auth),
+):
+    """Get scheduling queue (upcoming scheduled posts) and failed posts with error reason."""
+    try:
+        posts = load_scheduled()
+        queue = []
+        failed = []
+        for p in posts:
+            item = {
+                "id": p.get("id"),
+                "account_id": p.get("account_id"),
+                "scheduled_time": p.get("scheduled_time"),
+                "media_type": p.get("media_type"),
+                "caption": (p.get("caption") or "")[:200],
+                "urls": p.get("urls") or [],
+                "created_at": p.get("created_at"),
+            }
+            status = (p.get("status") or "scheduled").lower()
+            if status == "failed":
+                item["error_message"] = p.get("error_message") or "Unknown error"
+                item["failed_at"] = p.get("failed_at")
+                failed.append(item)
+            else:
+                queue.append(item)
+        # Sort queue by scheduled_time ascending; failed by failed_at descending
+        queue.sort(key=lambda x: (x["scheduled_time"] or ""))
+        failed.sort(key=lambda x: (x.get("failed_at") or ""), reverse=True)
+        return {
+            "status": "success",
+            "queue": queue,
+            "failed": failed,
+            "queue_count": len(queue),
+            "failed_count": len(failed),
+        }
+    except Exception as e:
+        logger.exception("Failed to get schedule queue", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to get schedule queue: {str(e)}")
+
+
 # --- Status & Utils ---
 
 @router.get("/status", response_model=StatusResponse)
@@ -1259,7 +1300,8 @@ async def run_warming_now(
     """Manually trigger warming actions for all accounts"""
     try:
         logger.info("Manual warming trigger requested")
-        results = app.run_warming_now()
+        # Run in thread pool so long-running warming (browser/API) doesn't block the event loop
+        results = await run_in_threadpool(app.run_warming_now)
         
         return {
             "status": "success",
@@ -2259,14 +2301,17 @@ async def remove_post_dm_file(media_id: str, account_id: Optional[str] = None, a
 # Account Management Endpoints
 
 @router.get("/accounts/status")
-async def get_accounts_status(app: InstaForgeApp = Depends(get_app)):
+async def get_accounts_status(
+    app: InstaForgeApp = Depends(get_app),
+    current_user: User = Depends(require_auth),
+):
     """Get health status for all accounts"""
     try:
         if not app.account_health_service:
             raise HTTPException(status_code=500, detail="Health service not initialized")
         
-        # Check health for all accounts
-        results = app.account_health_service.check_all_accounts()
+        # Run blocking health checks in thread pool so the async event loop doesn't block
+        results = await run_in_threadpool(app.account_health_service.check_all_accounts)
         
         # Format response
         status_list = []
@@ -2352,7 +2397,10 @@ async def onboard_account(account_id: str, app: InstaForgeApp = Depends(get_app)
 
 
 @router.post("/accounts/reload")
-async def reload_accounts(app: InstaForgeApp = Depends(get_app)):
+async def reload_accounts(
+    app: InstaForgeApp = Depends(get_app),
+    current_user: User = Depends(require_auth),
+):
     """Reload accounts from config and re-register in all services"""
     try:
         results = app.reload_accounts()
