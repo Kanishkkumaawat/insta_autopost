@@ -178,6 +178,8 @@ async function saveAccount() {
     const accountId = document.getElementById('acc-id').value;
     const username = document.getElementById('acc-username').value;
     const token = document.getElementById('acc-token').value;
+    const passwordEl = document.getElementById('acc-password');
+    const password = passwordEl ? passwordEl.value.trim() : '';
     const warming = document.getElementById('acc-warming').checked;
     
     if (!accountId || !username || !token) {
@@ -197,6 +199,7 @@ async function saveAccount() {
         },
         proxy: { enabled: false }
     };
+    if (password) accountData.password = password;
 
     // If editing, merge with existing data to preserve fields like comment_to_dm
     if (mode === 'edit' && window.currentEditingAccount) {
@@ -211,6 +214,7 @@ async function saveAccount() {
                 enabled: warming
             }
         };
+        if (!password) delete accountData.password;
     } else {
          // New account default config (Auto-DM on by default)
          accountData.comment_to_dm = { enabled: true };
@@ -264,6 +268,11 @@ async function editAccount(accountId) {
         document.getElementById('acc-id').disabled = true;
         document.getElementById('acc-username').value = account.username;
         document.getElementById('acc-token').value = account.access_token;
+        const passwordInput = document.getElementById('acc-password');
+        if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.placeholder = 'Leave blank to keep current password';
+        }
         document.getElementById('acc-warming').checked = account.warming?.enabled || false;
         
         // DM Enabled checkbox

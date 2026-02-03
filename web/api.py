@@ -793,7 +793,12 @@ async def get_accounts(current_user: User = Depends(require_auth)):
     if current_user.role != "admin":
         accounts = [acc for acc in accounts if acc.owner_id == current_user.id or acc.owner_id is None]
     
-    return {"accounts": [acc.dict() for acc in accounts]}
+    # Exclude password from response (used only for warmup browser login; set via Edit Account)
+    def _account_dict_safe(acc):
+        d = acc.dict()
+        d.pop("password", None)
+        return d
+    return {"accounts": [_account_dict_safe(acc) for acc in accounts]}
 
 @router.post("/config/accounts/add")
 async def add_account(
@@ -823,7 +828,9 @@ async def add_account(
         app.accounts = accounts
         app.account_service.update_accounts(accounts)
         
-        return {"status": "success", "message": "Account added", "account": account.dict()}
+        add_resp = account.dict()
+        add_resp.pop("password", None)
+        return {"status": "success", "message": "Account added", "account": add_resp}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add account: {str(e)}")
 
@@ -845,7 +852,11 @@ async def update_account(
         found = False
         for i, acc in enumerate(accounts):
             if acc.account_id == account_id:
-                accounts[i] = account_update
+                # Preserve existing password if update does not provide one (edit form leaves blank to keep current)
+                update_dict = account_update.dict()
+                if not update_dict.get("password"):
+                    update_dict["password"] = acc.password
+                accounts[i] = Account(**update_dict)
                 found = True
                 break
         
@@ -858,7 +869,10 @@ async def update_account(
         app.accounts = accounts
         app.account_service.update_accounts(accounts)
         
-        return {"status": "success", "message": "Account updated", "account": account_update.dict()}
+        updated = accounts[i]
+        upd_resp = updated.dict()
+        upd_resp.pop("password", None)
+        return {"status": "success", "message": "Account updated", "account": upd_resp}
     except HTTPException:
         raise
     except Exception as e:
