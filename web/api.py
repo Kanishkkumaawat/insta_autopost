@@ -1,5 +1,6 @@
 """API route handlers for InstaForge web dashboard"""
 
+import asyncio
 import json
 import yaml
 import os
@@ -1463,7 +1464,18 @@ async def run_warmup_automation_now(
         return automation.run_for_account(account_id)
 
     try:
-        result = await run_in_threadpool(_run)
+        result = await asyncio.wait_for(run_in_threadpool(_run), timeout=180.0)
+    except asyncio.TimeoutError:
+        result = {
+            "account_id": account_id,
+            "actions": 0,
+            "errors": 0,
+            "tasks_done": [],
+            "message": (
+                "Automation timed out after 3 minutes. The browser may still be busy. "
+                "Try again later or check server logs."
+            ),
+        }
     except Exception as e:
         result = {
             "account_id": account_id,

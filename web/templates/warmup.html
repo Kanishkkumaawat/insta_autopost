@@ -287,12 +287,13 @@ async function loadAutomationConfig(accountId) {
     }
 }
 
-async function runAutomationWithAutoEnable(accountId) {
+async function runAutomationWithAutoEnable(accountId, signal) {
     const r = await fetch('/api/warmup/run-automation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ account_id: accountId }),
+        signal: signal || null,
     });
     const d = await r.json();
     if (!r.ok) {
@@ -308,8 +309,10 @@ document.getElementById('run-automation-now-btn').addEventListener('click', asyn
     const btn = document.getElementById('run-automation-now-btn');
     btn.disabled = true;
     btn.textContent = 'Running...';
+    const abort = new AbortController();
+    const timeoutId = setTimeout(() => abort.abort(), 190000);
     try {
-        let d = await runAutomationWithAutoEnable(accountId);
+        let d = await runAutomationWithAutoEnable(accountId, abort.signal);
         let msg = d.result?.message || '';
         if (msg.includes('Automation is disabled') && confirm('Automation is disabled. Enable it and run now?')) {
             const hashtags = document.getElementById('automation-hashtags').value.split(',').map(s => s.trim()).filter(Boolean);
@@ -325,7 +328,7 @@ document.getElementById('run-automation-now-btn').addEventListener('click', asyn
                 }),
             });
             document.getElementById('automation-enabled').checked = true;
-            d = await runAutomationWithAutoEnable(accountId);
+            d = await runAutomationWithAutoEnable(accountId, abort.signal);
             msg = d.result?.message || '';
         }
         const actions = d.result?.actions ?? 0;
@@ -338,8 +341,13 @@ document.getElementById('run-automation-now-btn').addEventListener('click', asyn
         alert(text);
         loadWarmupStatus();
     } catch (e) {
-        alert('Error: ' + (e.message || String(e)));
+        if (e.name === 'AbortError') {
+            alert('Request timed out after about 3 minutes. The automation may still be running on the server. The button has been reset.');
+        } else {
+            alert('Error: ' + (e.message || String(e)));
+        }
     } finally {
+        clearTimeout(timeoutId);
         btn.disabled = false;
         btn.textContent = 'Run automation now';
     }
