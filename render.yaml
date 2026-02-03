@@ -13,6 +13,10 @@ services:
         value: 0.0.0.0
       # Add these in Render dashboard under Environment Variables:
       # - BASE_URL (e.g. https://veilforce.com or https://your-app.onrender.com)
+      # Optional rest cycle (pause automation for N min every X hours, then resume; server stays up):
+      # - REST_CYCLE_ENABLED=1
+      # - REST_CYCLE_UPTIME_HOURS=6
+      # - REST_CYCLE_REST_MINUTES=15
       # - META_APP_ID
       # - META_APP_SECRET
       # - OPENAI_API_KEY

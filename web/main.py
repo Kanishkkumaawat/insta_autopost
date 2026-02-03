@@ -20,6 +20,7 @@ from .instagram_webhook import process_webhook_payload
 from .scheduled_publisher import start_scheduled_publisher, stop_scheduled_publisher
 from .warming_scheduler import start_warming_scheduler, stop_warming_scheduler
 from .warmup_automation_scheduler import start_warmup_automation_scheduler, stop_warmup_automation_scheduler
+from .rest_cycle import start_rest_cycle, stop_rest_cycle
 from src.app import InstaForgeApp
 from src.services.token_refresher import start_daily_token_refresh_job, stop_daily_token_refresh_job
 from src.utils.logger import get_logger
@@ -542,6 +543,12 @@ async def startup_event():
                     print("Account health monitoring started")
                 except Exception as e:
                     logger.error(f"Failed to start account health monitoring: {e}", exc_info=True)
+
+            # Rest cycle: after X hours, pause automation for Y minutes then resume (no full shutdown)
+            try:
+                start_rest_cycle(instaforge_app)
+            except Exception as e:
+                logger.warning(f"Failed to start rest cycle: {e}", exc_info=True)
         
         print("InstaForge startup completed successfully!")
     except Exception as e:
@@ -605,6 +612,12 @@ async def shutdown_event():
             stop_warmup_automation_scheduler()
         except Exception as e:
             logger.warning("Error stopping warmup automation scheduler", error=str(e))
+
+        try:
+            logger.info("Stopping rest cycle...")
+            stop_rest_cycle()
+        except Exception as e:
+            logger.warning("Error stopping rest cycle", error=str(e))
         
         # Close browser automation with await (we're in async context; sync close_all uses run_until_complete on same loop → fails)
         try:

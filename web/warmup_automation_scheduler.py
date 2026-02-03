@@ -20,11 +20,22 @@ def _run_warmup_automation():
     """Run automation for all accounts in active warm-up with automation enabled."""
     global _app_instance
     if not _app_instance:
+        logger.debug("Warmup skipped: app instance not set")
         return
     app = _app_instance
     account_service = getattr(app, "account_service", None)
     browser_wrapper = getattr(app, "browser_wrapper", None)
-    if not account_service or not browser_wrapper:
+    if not account_service:
+        logger.warning(
+            "Warmup skipped: account_service not available. "
+            "Warmup automation will not run until the app is fully initialized."
+        )
+        return
+    if not browser_wrapper:
+        logger.warning(
+            "Warmup skipped: browser automation not available (Playwright not installed or init failed). "
+            "Install with: pip install playwright && playwright install chromium"
+        )
         return
     from src.features.warmup.warmup_automation import WarmupAutomation
     automation = WarmupAutomation(account_service, browser_wrapper)
