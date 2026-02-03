@@ -49,7 +49,7 @@ class BrowserLikeAction:
             logger.info("Liking post via browser", post_url=post_url)
             
             # Navigate to post
-            await self.page.goto(post_url, wait_until="networkidle", timeout=30000)
+            await self.page.goto(post_url, wait_until="domcontentloaded", timeout=60000)
             
             # Wait a bit for page to fully load
             await self.page.wait_for_timeout(2000)

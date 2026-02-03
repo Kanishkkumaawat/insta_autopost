@@ -28,7 +28,7 @@ class BrowserSaveAction:
         """Save a post by its URL."""
         try:
             logger.info("Saving post via browser", post_url=post_url)
-            await self.page.goto(post_url, wait_until="networkidle", timeout=30000)
+            await self.page.goto(post_url, wait_until="domcontentloaded", timeout=60000)
             await self.page.wait_for_timeout(2000)
 
             save_selectors = [

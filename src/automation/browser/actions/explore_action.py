@@ -34,7 +34,7 @@ class BrowserExploreAction:
             tag = hashtag.replace("#", "").strip()
             url = f"https://www.instagram.com/explore/tags/{tag}/"
             logger.info("Discovering posts from hashtag", hashtag=tag)
-            await self.page.goto(url, wait_until="networkidle", timeout=30000)
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await self.page.wait_for_timeout(3000)
 
             # Get all post/reel links from page
@@ -58,7 +58,7 @@ class BrowserExploreAction:
         """Navigate to Explore and collect post URLs."""
         urls = []
         try:
-            await self.page.goto("https://www.instagram.com/explore/", wait_until="networkidle", timeout=30000)
+            await self.page.goto("https://www.instagram.com/explore/", wait_until="domcontentloaded", timeout=60000)
             await self.page.wait_for_timeout(3000)
             links = await self.page.evaluate(
                 """() => [...document.querySelectorAll('a[href*="/p/"], a[href*="/reel/"]')].map(a => a.href)"""

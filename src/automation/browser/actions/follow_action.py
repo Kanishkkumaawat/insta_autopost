@@ -34,7 +34,7 @@ class BrowserFollowAction:
                 url = f"https://www.instagram.com/{url}/"
             elif not url.startswith("http"):
                 url = f"https://www.instagram.com/{url.lstrip('/')}/"
-            await self.page.goto(url, wait_until="networkidle", timeout=30000)
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
             await self.page.wait_for_timeout(2000)
 
             follow_selectors = [

@@ -1,5 +1,6 @@
 """Browser session manager for Instagram login persistence"""
 
+import asyncio
 import json
 from typing import Optional
 from pathlib import Path
@@ -7,6 +8,11 @@ from pathlib import Path
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Use domcontentloaded instead of networkidle - Instagram has continuous background
+# requests and networkidle often times out or triggers ERR_HTTP_RESPONSE_CODE_FAILURE
+INSTAGRAM_WAIT_UNTIL = "domcontentloaded"
+INSTAGRAM_NAV_TIMEOUT = 60000
 
 try:
     from playwright.async_api import Page
@@ -119,8 +125,12 @@ class BrowserSessionManager:
             return False
         
         try:
-            # Navigate to Instagram home
-            await page.goto("https://www.instagram.com/", wait_until="networkidle")
+            # Navigate to Instagram home (domcontentloaded avoids networkidle timeout on Instagram)
+            await page.goto(
+                "https://www.instagram.com/",
+                wait_until=INSTAGRAM_WAIT_UNTIL,
+                timeout=INSTAGRAM_NAV_TIMEOUT,
+            )
             
             # Check for login indicators
             # If we see certain elements, we're logged in
@@ -183,9 +193,30 @@ class BrowserSessionManager:
             return False
         
         try:
-            # Navigate to Instagram login page
-            await page.goto("https://www.instagram.com/accounts/login/", wait_until="networkidle")
-            
+            # Navigate to Instagram login page - use domcontentloaded and retry on failure
+            # (networkidle fails on Instagram due to continuous background requests)
+            login_url = "https://www.instagram.com/accounts/login/"
+            last_err = None
+            for attempt in range(3):
+                try:
+                    await page.goto(
+                        login_url,
+                        wait_until=INSTAGRAM_WAIT_UNTIL,
+                        timeout=INSTAGRAM_NAV_TIMEOUT,
+                    )
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < 2:
+                        logger.warning(
+                            "Login page nav failed, retrying",
+                            attempt=attempt + 1,
+                            error=str(e)[:100],
+                        )
+                        await asyncio.sleep(3)
+            else:
+                raise last_err
+
             # Wait for login form
             await page.wait_for_selector('input[name="username"]', timeout=10000)
             
@@ -197,7 +228,7 @@ class BrowserSessionManager:
             await page.click('button[type="submit"]')
             
             # Wait for navigation (either to home or error)
-            await page.wait_for_load_state("networkidle", timeout=15000)
+            await page.wait_for_load_state(INSTAGRAM_WAIT_UNTIL, timeout=20000)
             
             # Check if login was successful
             if await self.is_logged_in(page):
