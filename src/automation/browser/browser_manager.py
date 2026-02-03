@@ -72,12 +72,18 @@ class BrowserManager:
         if account_id not in self.browsers:
             await self._initialize_playwright()
             
-            # Browser launch options
+            # Browser launch options; reduce automation detection (Instagram often blocks headless)
             launch_options = {
                 "headless": self.headless,
-                "channel": "chromium",  # Use Chromium
+                "channel": "chromium",
+                "args": [
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-infobars",
+                    "--window-size=1920,1080",
+                ],
             }
-            
             # Add proxy if provided
             if proxy_url:
                 # Parse proxy URL (format: http://user:pass@host:port)
@@ -119,9 +125,15 @@ class BrowserManager:
             
             context_options = {
                 "viewport": {"width": 1920, "height": 1080},
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "user_agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                ),
                 "locale": "en-US",
                 "timezone_id": "America/New_York",
+                "extra_http_headers": {
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
             }
             
             context = await browser.new_context(**context_options)

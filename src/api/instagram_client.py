@@ -170,8 +170,14 @@ class InstagramClient:
                         retry_after = error.get("error_data", {}).get("retry_after", 60)
                         raise RateLimitError(error_message, retry_after=retry_after)
                     
+                    msg = f"{error_type}: {error_message} (code: {error_code})"
+                    if error_code == 200:
+                        msg += (
+                            " Instagram has restricted API access for this account. "
+                            "Check Meta for Developers app status or re-authenticate the account."
+                        )
                     raise InstagramAPIError(
-                        f"{error_type}: {error_message} (code: {error_code})",
+                        msg,
                         error_code=error_code,
                         error_subcode=error_subcode,
                     )
@@ -190,6 +196,12 @@ class InstagramClient:
                     retry_after = error.get("error_data", {}).get("retry_after", 60)
                     raise RateLimitError(error_message, retry_after=retry_after)
                 
+                if error_code == 200:
+                    error_message = (
+                        f"{error_message} "
+                        "Instagram has restricted API access for this account. "
+                        "Check Meta for Developers app status, re-authenticate the account, or ensure the app is not in development mode if it should be live."
+                    )
                 raise InstagramAPIError(
                     error_message,
                     error_code=error_code,

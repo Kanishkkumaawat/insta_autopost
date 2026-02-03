@@ -84,11 +84,17 @@ class CommentMonitor:
             return media_list
             
         except Exception as e:
+            err_str = str(e)
             logger.error(
                 "Failed to get recent media",
                 account_id=account_id,
-                error=str(e),
+                error=err_str,
             )
+            if "API access blocked" in err_str or "(code: 200)" in err_str:
+                logger.warning(
+                    "Account API access is restricted by Instagram. Reconnect the account in Meta for Developers or re-add the account.",
+                    account_id=account_id,
+                )
             return []
     
     def monitor_account_comments(self, account_id: str):

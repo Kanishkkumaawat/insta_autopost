@@ -193,12 +193,18 @@ class BrowserSessionManager:
             return False
         
         try:
-            # Navigate to Instagram login page - use domcontentloaded and retry on failure
-            # (networkidle fails on Instagram due to continuous background requests)
+            # Load Instagram home first to get cookies; often reduces blocks on the login URL
+            home_url = "https://www.instagram.com/"
             login_url = "https://www.instagram.com/accounts/login/"
             last_err = None
             for attempt in range(3):
                 try:
+                    await page.goto(
+                        home_url,
+                        wait_until=INSTAGRAM_WAIT_UNTIL,
+                        timeout=INSTAGRAM_NAV_TIMEOUT,
+                    )
+                    await asyncio.sleep(2)
                     await page.goto(
                         login_url,
                         wait_until=INSTAGRAM_WAIT_UNTIL,
@@ -207,14 +213,22 @@ class BrowserSessionManager:
                     break
                 except Exception as e:
                     last_err = e
+                    err_str = str(e)
                     if attempt < 2:
                         logger.warning(
                             "Login page nav failed, retrying",
                             attempt=attempt + 1,
-                            error=str(e)[:100],
+                            error=err_str[:120],
                         )
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(5)
             else:
+                if "ERR_HTTP_RESPONSE_CODE_FAILURE" in str(last_err) or "403" in str(last_err):
+                    logger.error(
+                        "Instagram is blocking browser access (login page returned an error). "
+                        "Common causes: server/datacenter IP, or automation detection. "
+                        "Try: 1) Use a residential proxy in account settings, 2) Run from a home network, 3) Try again later.",
+                        username=username,
+                    )
                 raise last_err
 
             # Wait for login form
