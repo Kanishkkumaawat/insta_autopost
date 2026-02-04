@@ -153,12 +153,21 @@ class InstaForgeApp:
             post_dm_config=self.comment_to_dm_service.post_dm_config,  # Share same config
         )
         
+        try:
+            from web.cron_config import (
+                COMMENT_CHECK_INTERVAL_SECONDS,
+                COMMENT_STAGGER_BETWEEN_ACCOUNTS_SECONDS,
+            )
+        except Exception:
+            COMMENT_CHECK_INTERVAL_SECONDS = 300
+            COMMENT_STAGGER_BETWEEN_ACCOUNTS_SECONDS = 45
         self.comment_monitor = CommentMonitor(
             account_service=self.account_service,
             comment_service=self.comment_service,
             comment_to_dm_service=self.comment_to_dm_service,
-            check_interval_seconds=60,  # Check every minute
-            monitor_recent_posts=3,  # Fewer posts to leave headroom for posting
+            check_interval_seconds=COMMENT_CHECK_INTERVAL_SECONDS,
+            stagger_between_accounts_seconds=COMMENT_STAGGER_BETWEEN_ACCOUNTS_SECONDS,
+            monitor_recent_posts=3,
         )
         
         # Initialize account onboarding service

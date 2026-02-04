@@ -331,11 +331,11 @@ def _process_incoming_dm_for_ai_reply(account_id: str, value: Dict[str, Any], ap
     except Exception as e:
         logger.warning("DM inbox store failed", error=str(e), account_id=account_id, user_id=user_id)
 
-    # Check if AI DM is enabled (default: enabled when no config, so incoming DMs get auto-replies)
+    # AI DM auto-reply: enabled by default when ai_dm is None (so DMs get replies); otherwise use account setting
     ai_dm_enabled = True
     auto_send = True
-    if hasattr(account, "ai_dm") and account.ai_dm:
-        ai_dm_enabled = account.ai_dm.enabled
+    if hasattr(account, "ai_dm") and account.ai_dm is not None:
+        ai_dm_enabled = getattr(account.ai_dm, "enabled", True)
         auto_send = getattr(account.ai_dm, "auto_send", True)
 
     if not ai_dm_enabled:
@@ -674,13 +674,29 @@ def process_webhook_payload(body: Any, app: Any) -> None:
                     value_keys=list(value.keys()) if isinstance(value, dict) else None,
                     value_preview=str(value)[:500] if isinstance(value, dict) else str(value)[:200],
                 )
-                
-                # Process incoming DM for AI auto-reply
-                if account_id and app:
+                if not account_id or not app:
+                    logger.warning(
+                        "AI DM webhook skipped - missing account_id or app",
+                        entry_id=ig_id,
+                        account_id=account_id,
+                        has_app=bool(app),
+                    )
+                    continue
+                # Normalize: Graph API may send value.messages[] or a single message object
+                to_process: List[Dict[str, Any]] = []
+                if isinstance(value, dict):
+                    msgs = value.get("messages")
+                    if isinstance(msgs, list) and msgs:
+                        for m in msgs:
+                            if isinstance(m, dict):
+                                to_process.append(m)
+                    elif value.get("sender") or value.get("from") or value.get("message") or value.get("text"):
+                        to_process.append(value)
+                for msg_value in to_process:
                     try:
                         _process_incoming_dm_for_ai_reply(
                             account_id=account_id,
-                            value=value,
+                            value=msg_value,
                             app=app,
                         )
                     except Exception as e:
@@ -688,12 +704,5 @@ def process_webhook_payload(body: Any, app: Any) -> None:
                             "AI DM auto-reply processing failed",
                             account_id=account_id,
                             error=str(e),
-                            value=value,
+                            value=msg_value,
                         )
-                else:
-                    logger.warning(
-                        "AI DM webhook skipped - missing account_id or app",
-                        entry_id=ig_id,
-                        account_id=account_id,
-                        has_app=bool(app),
-                    )

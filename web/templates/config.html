@@ -106,12 +106,21 @@
                  </label>
             </div>
 
-            <!-- DM Config -->
+            <!-- Comment-to-DM Config -->
             <div class="form-group">
                  <label class="form-label flex items-center gap-2">
                      <input type="checkbox" id="acc-dm-enabled"> Enable Comment Auto-DM
                  </label>
-                 <div class="text-sm text-muted">Automatically DM users who comment. Instagram requires the user to message you first (24h window); commenting alone does not open DMs.</div>
+                 <div class="text-sm text-muted">Automatically DM users who comment. Set a public HTTP/HTTPS link below so DMs can include it (required for AutoDM to send).</div>
+                 <input type="url" id="acc-dm-link" class="form-control mt-2" placeholder="https://example.com/file.pdf (public URL)" style="max-width: 100%;">
+            </div>
+
+            <!-- AI DM auto-reply (when someone DMs you) -->
+            <div class="form-group">
+                 <label class="form-label flex items-center gap-2">
+                     <input type="checkbox" id="acc-ai-dm-enabled" checked> Enable AI DM auto-reply
+                 </label>
+                 <div class="text-sm text-muted">When someone DMs this account, automatically send an AI-generated reply. Requires webhook and OPENAI_API_KEY.</div>
             </div>
             
             <div class="flex justify-end gap-2 mt-4">

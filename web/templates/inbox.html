@@ -34,10 +34,11 @@
                 <span id="last-refreshed" class="inbox-last-refreshed text-muted"></span>
                 <span id="next-refresh" class="inbox-next-refresh text-muted"></span>
                 <label class="auto-refresh-label">
-                    <input type="checkbox" id="auto-refresh-inbox" title="Refresh list every 15 seconds" checked>
-                    <span>Auto-refresh (15s)</span>
+                    <input type="checkbox" id="auto-refresh-inbox" title="Refresh list periodically to avoid rate limits" checked>
+                    <span>Auto-refresh (60s)</span>
                 </label>
                 <button id="refresh-inbox" class="btn btn-secondary">Refresh</button>
+                <span class="inbox-rate-note">Refreshes on a timer to stay within Meta rate limits.</span>
             </div>
         </div>
         <div class="inbox-panels">
@@ -87,6 +88,7 @@
 .inbox-header-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .inbox-last-refreshed { font-size: 0.8125rem; }
 .inbox-next-refresh { font-size: 0.8125rem; min-width: 5rem; }
+.inbox-rate-note { font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem; }
 .auto-refresh-label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--text-muted); cursor: pointer; }
 .auto-refresh-label input { cursor: pointer; }
 .inbox-panels { display: grid; grid-template-columns: minmax(280px, 320px) 1fr; min-height: 420px; }
@@ -178,7 +180,7 @@ let countdownSecs = 0;
 let countdownInterval = null;
 
 function startCountdown() {
-    countdownSecs = 15;
+    countdownSecs = AUTO_REFRESH_SECONDS;
     const el = document.getElementById('next-refresh');
     if (!el) return;
     if (countdownInterval) clearInterval(countdownInterval);
@@ -369,7 +371,7 @@ document.getElementById('send-reply-btn').onclick = async () => {
 document.getElementById('refresh-inbox').onclick = () => { loadConversations(); };
 
 let autoRefreshInterval = null;
-const AUTO_REFRESH_SECONDS = 15;
+const AUTO_REFRESH_SECONDS = 60;
 
 function startAutoRefresh() {
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);

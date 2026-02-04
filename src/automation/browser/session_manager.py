@@ -193,10 +193,12 @@ class BrowserSessionManager:
             return False
         
         try:
-            # Load Instagram home first to get cookies; often reduces blocks on the login URL
+            # Load Instagram home first; then reach login form by clicking "Log in" to avoid
+            # direct request to /accounts/login/ which is often blocked on datacenter IPs
             home_url = "https://www.instagram.com/"
             login_url = "https://www.instagram.com/accounts/login/"
             last_err = None
+            reached_login_form = False
             for attempt in range(3):
                 try:
                     await page.goto(
@@ -205,11 +207,24 @@ class BrowserSessionManager:
                         timeout=INSTAGRAM_NAV_TIMEOUT,
                     )
                     await asyncio.sleep(2)
+                    # Prefer clicking "Log in" from home so navigation is same-origin (less likely blocked)
+                    try:
+                        login_link = await page.query_selector('a[href*="/accounts/login"]')
+                        if login_link:
+                            await login_link.click()
+                            await page.wait_for_load_state(INSTAGRAM_WAIT_UNTIL, timeout=15000)
+                            await asyncio.sleep(1)
+                            reached_login_form = True
+                            break
+                    except Exception:
+                        pass
+                    # Fallback: direct navigation to login URL
                     await page.goto(
                         login_url,
                         wait_until=INSTAGRAM_WAIT_UNTIL,
                         timeout=INSTAGRAM_NAV_TIMEOUT,
                     )
+                    reached_login_form = True
                     break
                 except Exception as e:
                     last_err = e
@@ -221,7 +236,7 @@ class BrowserSessionManager:
                             error=err_str[:120],
                         )
                         await asyncio.sleep(5)
-            else:
+            if not reached_login_form and last_err is not None:
                 if "ERR_HTTP_RESPONSE_CODE_FAILURE" in str(last_err) or "403" in str(last_err):
                     logger.error(
                         "Instagram is blocking browser access (login page returned an error). "

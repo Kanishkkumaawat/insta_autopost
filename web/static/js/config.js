@@ -220,11 +220,18 @@ async function saveAccount() {
          accountData.comment_to_dm = { enabled: true };
     }
     
-    // Also capture the new DM Enabled checkbox if we add it
     const dmEnabled = document.getElementById('acc-dm-enabled');
+    const dmLinkEl = document.getElementById('acc-dm-link');
     if (dmEnabled) {
         if (!accountData.comment_to_dm) accountData.comment_to_dm = {};
         accountData.comment_to_dm.enabled = dmEnabled.checked;
+        if (dmLinkEl) accountData.comment_to_dm.link_to_send = (dmLinkEl.value || '').trim() || null;
+    }
+    const aiDmEnabled = document.getElementById('acc-ai-dm-enabled');
+    if (aiDmEnabled) {
+        if (!accountData.ai_dm) accountData.ai_dm = {};
+        accountData.ai_dm.enabled = aiDmEnabled.checked;
+        if (accountData.ai_dm.auto_send === undefined) accountData.ai_dm.auto_send = true;
     }
     
     try {
@@ -275,11 +282,12 @@ async function editAccount(accountId) {
         }
         document.getElementById('acc-warming').checked = account.warming?.enabled || false;
         
-        // DM Enabled checkbox
         const dmCheckbox = document.getElementById('acc-dm-enabled');
-        if (dmCheckbox) {
-            dmCheckbox.checked = account.comment_to_dm?.enabled || false;
-        }
+        if (dmCheckbox) dmCheckbox.checked = account.comment_to_dm?.enabled || false;
+        const dmLinkInput = document.getElementById('acc-dm-link');
+        if (dmLinkInput) dmLinkInput.value = account.comment_to_dm?.link_to_send || '';
+        const aiDmCheckbox = document.getElementById('acc-ai-dm-enabled');
+        if (aiDmCheckbox) aiDmCheckbox.checked = account.ai_dm?.enabled !== false;
     } catch (error) {
         console.error('Failed to load account details:', error);
     }

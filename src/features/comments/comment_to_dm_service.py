@@ -965,21 +965,36 @@ class CommentToDMService:
         return result
     
     def get_status(self, account_id: str) -> Dict[str, Any]:
-        """Get current status and statistics for an account"""
+        """Get current status and statistics for an account. Includes readiness for AutoDM."""
         today = datetime.utcnow().date().isoformat()
         daily_count = self.daily_dm_counts[account_id].get(today, 0)
-        
+
         config = self._get_dm_config(account_id)
         daily_limit = config.get("daily_dm_limit", self.default_daily_limit) if config else self.default_daily_limit
-        
+        enabled = self._is_automation_enabled(account_id)
+        link = (config or {}).get("link_to_send") if config else None
+        has_link = bool(link and str(link).strip())
+        link_is_public = self._is_public_link(link) if link else False
+        ready = enabled and has_link and link_is_public
+        if not enabled:
+            message = "Enable Comment-to-DM in Config → Accounts → Edit account → Enable Comment Auto-DM."
+        elif not has_link:
+            message = "Set a link in Config → Comment-to-DM (Link to send) or per-post when publishing so DMs can be sent."
+        elif not link_is_public:
+            message = "Use a public HTTP/HTTPS URL for Link to send (file:// cannot be sent in DMs)."
+        else:
+            message = "AutoDM is active. New comments will receive DMs (subject to trigger and daily limits)."
+
         return {
-            "automation_enabled": self._is_automation_enabled(account_id),
+            "automation_enabled": enabled,
             "config": config,
             "daily_dm_count": daily_count,
             "daily_limit": daily_limit,
             "users_dm_today_count": len([k for k in self.users_dm_today[account_id] if k[2] == today]),
             "cooldown_seconds": config.get("cooldown_seconds", self.default_cooldown_seconds) if config else self.default_cooldown_seconds,
             "monitored_posts": len(self.last_processed_comment_id[account_id]),
+            "ready_to_send": ready,
+            "message": message,
         }
     
     def update_config(self, account_id: str, **kwargs) -> Dict[str, Any]:

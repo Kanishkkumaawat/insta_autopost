@@ -61,6 +61,7 @@ def _start_automation(app) -> None:
     from .warming_scheduler import start_warming_scheduler
     from .warmup_automation_scheduler import start_warmup_automation_scheduler
     from src.services.token_refresher import start_daily_token_refresh_job
+    from .cron_config import SCHEDULED_PUBLISHER_INTERVAL_SECONDS, TOKEN_REFRESH_INTERVAL_SECONDS
 
     try:
         if getattr(app, "comment_monitor", None):
@@ -68,11 +69,11 @@ def _start_automation(app) -> None:
     except Exception as e:
         logger.error("Rest cycle: error starting comment monitor", error=str(e), exc_info=True)
     try:
-        start_scheduled_publisher(app, interval_seconds=60)
+        start_scheduled_publisher(app, interval_seconds=SCHEDULED_PUBLISHER_INTERVAL_SECONDS)
     except Exception as e:
         logger.error("Rest cycle: error starting scheduled publisher", error=str(e), exc_info=True)
     try:
-        start_daily_token_refresh_job(app, interval_seconds=86400)
+        start_daily_token_refresh_job(app, interval_seconds=TOKEN_REFRESH_INTERVAL_SECONDS)
     except Exception as e:
         logger.error("Rest cycle: error starting token refresher", error=str(e), exc_info=True)
     try:

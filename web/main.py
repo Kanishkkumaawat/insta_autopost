@@ -508,15 +508,17 @@ async def startup_event():
             except Exception as e:
                 logger.error(f"Failed to start comment monitoring: {e}", exc_info=True)
             
-            # Start background loop to publish scheduled posts when due
+            # Start background loop to publish scheduled posts when due (cron-style interval)
             try:
-                start_scheduled_publisher(instaforge_app, interval_seconds=60)
+                from web.cron_config import SCHEDULED_PUBLISHER_INTERVAL_SECONDS
+                start_scheduled_publisher(instaforge_app, interval_seconds=SCHEDULED_PUBLISHER_INTERVAL_SECONDS)
             except Exception as e:
                 logger.error(f"Failed to start scheduled publisher: {e}", exc_info=True)
             
-            # Daily token refresh for OAuth accounts (tokens older than 40 days)
+            # Daily token refresh for OAuth accounts (cron-style, rate limit friendly)
             try:
-                start_daily_token_refresh_job(instaforge_app, interval_seconds=86400)
+                from web.cron_config import TOKEN_REFRESH_INTERVAL_SECONDS
+                start_daily_token_refresh_job(instaforge_app, interval_seconds=TOKEN_REFRESH_INTERVAL_SECONDS)
             except Exception as e:
                 logger.error(f"Failed to start token refresh job: {e}", exc_info=True)
             

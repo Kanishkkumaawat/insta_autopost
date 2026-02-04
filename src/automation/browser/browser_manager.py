@@ -1,12 +1,39 @@
 """Browser manager for Playwright instances"""
 
 import asyncio
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _parse_proxy_url(proxy_url: str) -> Dict[str, Any]:
+    """
+    Parse proxy URL into Playwright format.
+    Supports http://host:port and http://user:pass@host:port.
+    Returns dict with server (required), username and password (optional).
+    """
+    if not proxy_url or not proxy_url.strip():
+        return {}
+    url = proxy_url.strip()
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    parsed = urlparse(url)
+    netloc = parsed.netloc or ""
+    server = f"{parsed.scheme or 'http'}://{netloc}"
+    username = None
+    password = None
+    if "@" in netloc:
+        userinfo, hostport = netloc.rsplit("@", 1)
+        server = f"{parsed.scheme or 'http'}://{hostport}"
+        if ":" in userinfo:
+            username, _, password = userinfo.partition(":")
+        else:
+            username = userinfo
+    return {"server": server, "username": username or None, "password": password or None}
 
 # Try to import Playwright
 try:
@@ -84,10 +111,11 @@ class BrowserManager:
                     "--window-size=1920,1080",
                 ],
             }
-            # Add proxy if provided
+            # Add proxy if provided (Playwright wants server + optional username/password)
             if proxy_url:
-                # Parse proxy URL (format: http://user:pass@host:port)
-                launch_options["proxy"] = {"server": proxy_url}
+                proxy_dict = _parse_proxy_url(proxy_url)
+                if proxy_dict:
+                    launch_options["proxy"] = {k: v for k, v in proxy_dict.items() if v is not None}
             
             browser = await self.playwright.chromium.launch(**launch_options)
             self.browsers[account_id] = browser

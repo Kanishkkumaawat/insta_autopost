@@ -1971,10 +1971,10 @@ async def test_ai_reply(
         account = app.account_service.get_account(account_id)
         account_username = account.username if account else None
         
-        # Check AI DM config
-        ai_dm_enabled = False
-        if account and hasattr(account, 'ai_dm') and account.ai_dm:
-            ai_dm_enabled = account.ai_dm.enabled
+        # Check AI DM config (default enabled when ai_dm is None)
+        ai_dm_enabled = True
+        if account and hasattr(account, 'ai_dm') and account.ai_dm is not None:
+            ai_dm_enabled = getattr(account.ai_dm, 'enabled', True)
         
         # Initialize handler
         ai_handler = AIDMHandler()
@@ -2277,10 +2277,10 @@ async def test_ai_dm_status(app: InstaForgeApp = Depends(get_app)):
         }
         
         for account in accounts:
-            ai_dm_enabled = False
-            if hasattr(account, 'ai_dm') and account.ai_dm:
-                ai_dm_enabled = account.ai_dm.enabled
-            
+            ai_dm_enabled = True
+            if hasattr(account, 'ai_dm') and account.ai_dm is not None:
+                ai_dm_enabled = getattr(account.ai_dm, 'enabled', True)
+
             account_status = {
                 "account_id": account.account_id,
                 "username": account.username,
