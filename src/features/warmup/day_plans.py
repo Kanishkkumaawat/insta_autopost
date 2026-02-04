@@ -15,6 +15,7 @@ WARMUP_DAY_PLANS: Dict[int, List[Dict[str, Any]]] = {
         {"id": "day1_like", "label": "Like 10 posts", "manual": False, "target": 10, "category": "engage"},
         {"id": "day1_comment", "label": "Comment on 5 posts", "manual": False, "target": 5, "category": "engage"},
         {"id": "day1_save", "label": "Save 3 posts", "manual": False, "target": 3, "category": "engage"},
+        {"id": "day1_follow_reel", "label": "Follow 3 reel creators", "manual": False, "target": 3, "category": "engage"},
         # No post, no DM
     ],
     2: [
@@ -22,10 +23,12 @@ WARMUP_DAY_PLANS: Dict[int, List[Dict[str, Any]]] = {
         {"id": "day2_like", "label": "Like 15 posts", "manual": False, "target": 15, "category": "engage"},
         {"id": "day2_comment", "label": "Comment 5–7", "manual": False, "target": 6, "category": "engage"},
         {"id": "day2_save", "label": "Save 5 posts", "manual": False, "target": 5, "category": "engage"},
+        {"id": "day2_follow_reel", "label": "Follow 2 reel creators", "manual": False, "target": 2, "category": "engage"},
         {"id": "day2_share_story", "label": "Share 2 to story", "manual": True, "target": 2, "category": "story"},
     ],
     3: [
         {"id": "day3_follow", "label": "Follow 5–8 accounts", "manual": True, "target": 6, "category": "engage"},
+        {"id": "day3_follow_reel", "label": "Follow 3 reel creators", "manual": False, "target": 3, "category": "engage"},
         {"id": "day3_reply_story", "label": "Reply to 2 stories", "manual": True, "target": 2, "category": "dm"},
         {"id": "day3_story_dm", "label": "Send 2 story DMs", "manual": True, "target": 2, "category": "dm"},
         {"id": "day3_watch", "label": "Watch 30–40 reels", "manual": True, "target": 35, "category": "engage"},

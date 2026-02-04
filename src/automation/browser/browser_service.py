@@ -184,6 +184,42 @@ class BrowserService:
             logger.error("Follow failed", account_id=account_id, error=str(e))
             return {"action": "follow", "profile_url": profile_url, "status": "failed", "error": str(e)}
 
+    async def follow_by_post_or_reel_url(
+        self,
+        account_id: str,
+        post_or_reel_url: str,
+        username: str,
+        password=None,
+        proxy_url=None,
+    ) -> Dict:
+        """Open a post/reel, find the creator's profile, and follow via browser."""
+        try:
+            logged_in = await self.ensure_account_logged_in(account_id, username, password, proxy_url)
+            if not logged_in:
+                return {
+                    "action": "follow",
+                    "post_or_reel_url": post_or_reel_url,
+                    "status": "failed",
+                    "error": "Not logged in",
+                }
+            page = await self.browser_manager.get_page_for_account(account_id, proxy_url)
+            from .actions.follow_action import BrowserFollowAction
+            action = BrowserFollowAction(page)
+            return await action.follow_by_post_or_reel_url(post_or_reel_url)
+        except Exception as e:
+            logger.error(
+                "Follow by post/reel failed",
+                account_id=account_id,
+                post_or_reel_url=post_or_reel_url,
+                error=str(e),
+            )
+            return {
+                "action": "follow",
+                "post_or_reel_url": post_or_reel_url,
+                "status": "failed",
+                "error": str(e),
+            }
+
     async def comment_on_post(
         self,
         account_id: str,
@@ -215,7 +251,13 @@ class BrowserService:
         password=None,
         proxy_url=None,
     ) -> list:
-        """Discover post URLs from hashtag pages."""
+        """Discover post URLs: Reels tab first, then Explore, then hashtags, then built-in fallback hashtags."""
+        # High-volume hashtags that almost always have posts (used when user hashtags yield nothing)
+        FALLBACK_HASHTAGS = [
+            "love", "photo", "instagood", "art", "nature", "travel",
+            "fashion", "food", "music", "photography",
+        ]
+        target_count = max(10, limit_per_hashtag * 3)
         urls = []
         try:
             logged_in = await self.ensure_account_logged_in(account_id, username, password, proxy_url)
@@ -224,15 +266,35 @@ class BrowserService:
             page = await self.browser_manager.get_page_for_account(account_id, proxy_url)
             from .actions.explore_action import BrowserExploreAction
             action = BrowserExploreAction(page)
-            for tag in (hashtags or ["explore"])[:3]:
+            # 1. Try Reels tab first
+            urls = await action.get_post_urls_from_reels(limit=target_count)
+            if not urls:
+                logger.info("Reels returned no URLs, falling back to Explore and hashtags")
+            # 2. If needed, try Explore page (full target when Reels gave nothing)
+            if len(urls) < target_count:
+                need = target_count - len(urls)
+                found = await action.get_post_urls_from_explore(limit=max(need, 10))
+                for u in found:
+                    if u not in urls:
+                        urls.append(u)
+            # 3. If needed, try user hashtags (skip literal "explore" as hashtag)
+            user_tags = [t.replace("#", "").strip() for t in (hashtags or []) if t and str(t).strip().lower() != "explore"]
+            for tag in user_tags[:3]:
+                if len(urls) >= target_count:
+                    break
                 found = await action.get_post_urls_from_hashtag(tag, limit=limit_per_hashtag)
                 for u in found:
                     if u not in urls:
                         urls.append(u)
-                if len(urls) >= limit_per_hashtag * 3:
-                    break
-            if not urls:
-                urls = await action.get_post_urls_from_explore(limit=10)
+            # 4. If still not enough, try built-in high-volume hashtags
+            if len(urls) < target_count:
+                for tag in FALLBACK_HASHTAGS:
+                    if len(urls) >= target_count:
+                        break
+                    found = await action.get_post_urls_from_hashtag(tag, limit=limit_per_hashtag)
+                    for u in found:
+                        if u not in urls:
+                            urls.append(u)
         except Exception as e:
             logger.warning("Discovery failed", account_id=account_id, error=str(e))
         return urls

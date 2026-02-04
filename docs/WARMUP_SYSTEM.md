@@ -130,10 +130,10 @@ When Day 5 completes, a report is saved to `data/warmup_reports.json` with:
 
 When **automation_enabled** is true and the account has an active warm-up:
 
-- **Discovery**: Browser navigates to hashtag Explore pages (from target_hashtags) and collects post URLs
+- **Discovery**: Browser navigates to Instagram's Explore page first, then hashtag pages (from target_hashtags), and collects post URLs. Discovery is **browser-based only** — no Meta app callback URL or permission is used for finding posts.
 - **Actions**: Like, comment, save run automatically via Playwright browser
 - **Schedule**: Runs at configured hours (default 9, 14, 18)
-- **Requirements**: Playwright (`pip install playwright && playwright install chromium`), account password for browser login
+- **Requirements**: Playwright (`pip install playwright && playwright install chromium`), account password for browser login. **Server deployments**: For reliable discovery, use a residential proxy (Config → Accounts → Edit → Proxy) or run the app from a home network; Instagram often blocks browser access from datacenter IPs.
 
 Configure in the warm-up UI: enable automation, set hashtags (e.g. `fitness, travel`), save.
 

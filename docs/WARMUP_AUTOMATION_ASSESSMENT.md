@@ -29,7 +29,8 @@ These run at scheduled hours (9, 14, 18) or via the **Run automation now** butto
 1. **Playwright** – `pip install playwright && playwright install chromium`
 2. **Account password** – Stored in account config; needed for browser login
 3. **Automation enabled** – Toggle in warm-up UI + Save
-4. **Target hashtags** – At least one (e.g. `explore`, `fitness`)
+4. **Target hashtags** – Optional; Explore page is tried first, then hashtags. Use e.g. `love`, `photo`, `travel` if you set any.
+5. **Discovery is browser-only** – No Meta app callback URL or permission is used for finding posts. If you run the app on a server (e.g. cloud), use a **residential proxy** (Config → Accounts → Edit → Proxy) or run from a home network; otherwise Instagram may block the browser and you'll see "no posts".
 
 ---
 

@@ -28,8 +28,13 @@ accounts:
   access_token: IGAAXIeneXrCxBZAGFVSGVyeEZAsdkpkX0lUd3lHWVpKdzF5c0pIcFkzWnVBQS1vWnFCQklyckJYZAUxqM2xHUHowUkJlY29NRF85STdReXRDaGpNeTZAKS1JubUdTb1dxWG5naFVOZAVB6SW9EN3AwYnV4eHRjRm1WWng1Ynpic1lKMAZDZD
   basic_display_token: null
   password: kanishk@1
+  owner_id: null
   proxy:
     enabled: false
+    host: null
+    port: null
+    username: null
+    password: null
   warming:
     enabled: true
     daily_actions: 10
@@ -43,7 +48,9 @@ accounts:
     link_to_send: null
     daily_dm_limit: 50
     cooldown_seconds: 5
-  ai_dm: null
+  ai_dm:
+    enabled: true
+    auto_send: true
   expires_at: null
   instagram_business_id: null
   page_id: null

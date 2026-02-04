@@ -88,7 +88,11 @@ class WarmupAutomation:
                 result["message"] = f"Discovery failed: {e}. Check login and hashtags."
             return result
         if not post_urls:
-            result["message"] = "No posts found for target hashtags. Try different hashtags or try again later."
+            result["message"] = (
+                "No posts found (we tried Reels, then Explore, then hashtags). "
+                "If you're on a server, use a residential proxy: Config → Accounts → Edit → Proxy, or run from home. "
+                "Otherwise ensure automation is enabled and try target hashtags: love, photo, travel."
+            )
             return result
         random.shuffle(post_urls)
         for task_def in tasks:
@@ -120,6 +124,10 @@ class WarmupAutomation:
                         r = self.browser_wrapper.comment_on_post_sync(
                             account_id, url, text, username, password, proxy_url
                         )
+                    elif "follow" in tid.lower():
+                        r = self.browser_wrapper.follow_by_post_or_reel_sync(
+                            account_id, url, username, password, proxy_url
+                        )
                     else:
                         continue
                     if r.get("status") in ("completed", "already_liked", "already_saved", "already_following"):
@@ -135,7 +143,7 @@ class WarmupAutomation:
         if result["actions"] > 0:
             logger.info("Warmup automation ran", account_id=account_id, actions=result["actions"])
         elif result["actions"] == 0 and result["errors"] == 0:
-            result["message"] = "Today's automatable tasks are already done (like/comment/save). Complete manual tasks or run again tomorrow."
+            result["message"] = "Today's automatable tasks are already done (like/comment/save/follow). Complete manual tasks or run again tomorrow."
         elif result["actions"] == 0 and result["errors"] > 0:
             result["message"] = f"Ran but all {result['errors']} action(s) failed. Check login and Instagram limits."
         return result

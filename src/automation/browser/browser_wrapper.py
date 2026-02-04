@@ -94,6 +94,22 @@ class BrowserWrapper:
             self.browser_service.follow_profile(account_id, profile_url, username, password, proxy_url)
         )
 
+    def follow_by_post_or_reel_sync(
+        self,
+        account_id: str,
+        post_or_reel_url: str,
+        username: str,
+        password=None,
+        proxy_url=None,
+    ) -> Dict:
+        """Follow the creator of a post/reel (sync wrapper)."""
+        loop = self._get_event_loop()
+        return loop.run_until_complete(
+            self.browser_service.follow_by_post_or_reel_url(
+                account_id, post_or_reel_url, username, password, proxy_url
+            )
+        )
+
     def comment_on_post_sync(self, account_id: str, post_url: str, text: str, username: str, password=None, proxy_url=None) -> Dict:
         """Comment on a post (sync wrapper)."""
         loop = self._get_event_loop()
