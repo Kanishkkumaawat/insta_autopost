@@ -46,20 +46,22 @@ class WarmingSettings(BaseModel):
     action_spacing_seconds: int = 60
 
 class DefaultProxy(BaseModel):
-    """Shared/default proxy used when account has proxy.enabled but no per-account host."""
+    """Shared/default proxy for warm-up browser (and other automation)."""
     enabled: bool = False
     host: Optional[str] = None
     port: Optional[int] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    protocol: str = "socks5"  # http or socks5; socks5 often works better for residential proxies
 
     def proxy_url(self) -> Optional[str]:
-        """Build proxy URL in same format as ProxyConfig (http://[user:pass@]host:port)."""
+        """Build proxy URL (socks5:// or http://[user:pass@]host:port)."""
         if not self.enabled or not self.host or not self.port:
             return None
+        scheme = "socks5" if self.protocol == "socks5" else "http"
         if self.username and self.password:
-            return f"http://{self.username}:{self.password}@{self.host}:{self.port}"
-        return f"http://{self.host}:{self.port}"
+            return f"{scheme}://{self.username}:{self.password}@{self.host}:{self.port}"
+        return f"{scheme}://{self.host}:{self.port}"
 
 
 class ProxySettings(BaseModel):

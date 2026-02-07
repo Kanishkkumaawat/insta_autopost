@@ -43,13 +43,9 @@ class AccountService:
         """Initialize Instagram clients for all accounts"""
         for account_id, account in self.accounts.items():
             try:
-                # Get proxy URL if enabled
+                # Instagram Graph API does NOT use proxy - proxy is only for warm-up browser.
+                # Using proxy for API causes BadStatusLine / connection errors.
                 proxy_url = None
-                if account.proxy.enabled:
-                    if self.proxy_manager:
-                        proxy_url = self.proxy_manager.get_proxy_url(account_id)
-                    else:
-                        proxy_url = account.proxy.proxy_url
                 
                 # Create client for monitoring (comment / media fetch)
                 client = InstagramClient(
@@ -272,13 +268,8 @@ class AccountService:
             
             # Initialize client for this account
             try:
-                # Get proxy URL if enabled
+                # Instagram API does not use proxy (proxy is for warm-up browser only)
                 proxy_url = None
-                if account.proxy.enabled:
-                    if self.proxy_manager:
-                        proxy_url = self.proxy_manager.get_proxy_url(account.account_id)
-                    else:
-                        proxy_url = account.proxy.proxy_url
                 
                 # Create client for monitoring
                 client = InstagramClient(
@@ -362,13 +353,8 @@ class AccountService:
                 self.clients.pop(account.account_id, None)
                 self.posting_clients.pop(account.account_id, None)
                 
-                # Get proxy URL if enabled
+                # Instagram API does not use proxy (proxy is for warm-up browser only)
                 proxy_url = None
-                if account.proxy.enabled:
-                    if self.proxy_manager:
-                        proxy_url = self.proxy_manager.get_proxy_url(account.account_id)
-                    else:
-                        proxy_url = account.proxy.proxy_url
                 
                 # Create new client for monitoring
                 client = InstagramClient(
@@ -395,7 +381,6 @@ class AccountService:
                     account_id=account.account_id,
                     username=account.username,
                 )
-            
             except Exception as e:
                 logger.error(
                     "Failed to update account",

@@ -8,7 +8,9 @@
       "role": "admin",
       "created_at": "2026-01-28T17:42:43.057239",
       "is_active": true,
-      "created_by": null
+      "created_by": null,
+      "subscription_plan": "free",
+      "subscription_expires_at": null
     },
     {
       "id": "3b9a52b4-f11c-4fdb-8cce-b45668722248",
@@ -18,7 +20,9 @@
       "role": "user",
       "created_at": "2026-01-28T17:43:48.903564",
       "is_active": true,
-      "created_by": null
+      "created_by": null,
+      "subscription_plan": "pro",
+      "subscription_expires_at": null
     }
   ]
 }

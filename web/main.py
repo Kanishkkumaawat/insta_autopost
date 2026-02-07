@@ -54,6 +54,7 @@ app.add_middleware(
 PUBLIC_ROUTES = {
     "/login",
     "/register",
+    "/pricing",
     "/auth/login",
     "/auth/logout",
     "/auth/register",
@@ -638,52 +639,86 @@ async def shutdown_event():
     logger.info("Shutdown complete")
 
 
-# Route handlers for frontend pages
+async def _get_user_from_request(request: Request):
+    """Get current user from request (for page handlers)."""
+    from web.auth_deps import get_session_token
+    from src.auth.user_auth import validate_session
+    token = get_session_token(request)
+    return await run_in_threadpool(validate_session, token) if token else None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Main posting page"""
+    """Main posting page (user only; admin redirected to /users)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("index.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/schedule", response_class=HTMLResponse)
 async def schedule_page(request: Request):
-    """Scheduled posts queue page"""
+    """Scheduled posts queue page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("schedule.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/posts", response_class=HTMLResponse)
 async def posts_page(request: Request):
-    """Published posts page"""
+    """Published posts page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("posts.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page(request: Request):
-    """Logs viewer page"""
+    """Logs viewer page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("logs.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/accounts", response_class=HTMLResponse)
 async def accounts_page(request: Request):
-    """Account status dashboard page"""
+    """Account status dashboard page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("accounts.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/warmup", response_class=HTMLResponse)
 async def warmup_page(request: Request):
-    """5-Day Account Warm-Up dashboard page"""
+    """5-Day Account Warm-Up dashboard page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("warmup.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/webhook-test", response_class=HTMLResponse)
 async def webhook_test_page(request: Request):
-    """Webhook and AI DM test page"""
+    """Webhook and AI DM test page (admin only)"""
+    from web.auth_deps import get_session_token
+    from src.auth.user_auth import validate_session
+
+    token = get_session_token(request)
+    user = await run_in_threadpool(validate_session, token) if token else None
+
+    if not user or user.role != "admin":
+        return RedirectResponse(url="/login", status_code=302)
+
     from .webhook_config import get_webhook_config
     webhook_config = get_webhook_config()
     content = await render_template_async(
@@ -695,22 +730,44 @@ async def webhook_test_page(request: Request):
 
 @app.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request):
-    """Configuration page"""
+    """Configuration page (admin only)"""
+    from web.auth_deps import get_session_token
+    from src.auth.user_auth import validate_session
+
+    token = get_session_token(request)
+    user = await run_in_threadpool(validate_session, token) if token else None
+
+    if not user or user.role != "admin":
+        return RedirectResponse(url="/login", status_code=302)
+
     content = await render_template_async("config.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/ai-settings", response_class=HTMLResponse)
 async def ai_settings_page(request: Request):
-    """AI Settings page"""
+    """AI Settings page (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("ai-settings.html", {"request": request})
     return HTMLResponse(content=content)
 
 
 @app.get("/inbox", response_class=HTMLResponse)
 async def inbox_page(request: Request):
-    """AI DM Inbox - view users, messages, AI suggestions, approve/send"""
+    """AI DM Inbox (user only)"""
+    user = await _get_user_from_request(request)
+    if user and user.role == "admin":
+        return RedirectResponse(url="/users", status_code=302)
     content = await render_template_async("inbox.html", {"request": request})
+    return HTMLResponse(content=content)
+
+
+@app.get("/pricing", response_class=HTMLResponse)
+async def pricing_page(request: Request):
+    """Pricing / subscription plans page (public; user-only content)"""
+    content = await render_template_async("pricing.html", {"request": request})
     return HTMLResponse(content=content)
 
 
@@ -739,7 +796,7 @@ async def users_page(request: Request):
     user = await run_in_threadpool(validate_session, token) if token else None
     
     if not user or user.role != "admin":
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url="/login", status_code=302)
     
     content = await render_template_async("users.html", {"request": request})
     return HTMLResponse(content=content)

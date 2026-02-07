@@ -88,6 +88,20 @@
                     Active
                 </label>
             </div>
+            <div class="form-group">
+                <label class="form-label">Subscription Plan</label>
+                <select id="edit-subscription-plan" class="form-control">
+                    <option value="free">Free</option>
+                    <option value="starter">Starter</option>
+                    <option value="pro">Pro</option>
+                </select>
+                <div class="text-sm text-muted">Grant paid plan to give user access to AI DM, warm-up, etc.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Plan Expires (optional)</label>
+                <input type="date" id="edit-subscription-expires" class="form-control">
+                <div class="text-sm text-muted">Leave blank for lifetime access</div>
+            </div>
             <div class="flex gap-2 justify-between" style="margin-top: 1.5rem;">
                 <button type="button" class="btn btn-secondary" onclick="closeEditUserModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary">
@@ -162,6 +176,7 @@ function renderUsers() {
                     <th>Username</th>
                     <th>Email</th>
                     <th>Role</th>
+                    <th>Plan</th>
                     <th>Status</th>
                     <th>Created</th>
                     <th>Actions</th>
@@ -178,12 +193,19 @@ function renderUsers() {
         const roleBadge = user.role === 'admin'
             ? '<span class="badge" style="background: #FEF3C7; color: #92400E;">Admin</span>'
             : '<span class="badge badge-info">User</span>';
+        const planName = (user.subscription_plan || 'free').charAt(0).toUpperCase() + (user.subscription_plan || 'free').slice(1);
+        const planBadge = user.subscription_plan === 'pro'
+            ? '<span class="badge" style="background: #DBEAFE; color: #1E40AF;">Pro</span>'
+            : user.subscription_plan === 'starter'
+            ? '<span class="badge" style="background: #D1FAE5; color: #065F46;">Starter</span>'
+            : '<span class="badge" style="background: #F3F4F6; color: #6B7280;">Free</span>';
         
         html += `
             <tr>
                 <td>${escapeHtml(user.username)}</td>
                 <td>${escapeHtml(user.email || '-')}</td>
                 <td>${roleBadge}</td>
+                <td>${planBadge}</td>
                 <td>${statusBadge}</td>
                 <td>${createdDate}</td>
                 <td>
@@ -270,6 +292,12 @@ function editUser(userId) {
     document.getElementById('edit-email').value = user.email || '';
     document.getElementById('edit-role').value = user.role;
     document.getElementById('edit-is-active').checked = user.is_active;
+    document.getElementById('edit-subscription-plan').value = user.subscription_plan || 'free';
+    const expiresEl = document.getElementById('edit-subscription-expires');
+    if (expiresEl && user.subscription_expires_at) {
+        const d = new Date(user.subscription_expires_at);
+        expiresEl.value = d.toISOString().split('T')[0];
+    } else if (expiresEl) expiresEl.value = '';
     
     const modal = document.getElementById('edit-user-modal');
     modal.classList.remove('hidden');
@@ -293,6 +321,9 @@ async function handleUpdateUser(event) {
     const email = document.getElementById('edit-email').value;
     const role = document.getElementById('edit-role').value;
     const isActive = document.getElementById('edit-is-active').checked;
+    const subscriptionPlan = document.getElementById('edit-subscription-plan').value;
+    const expiresVal = document.getElementById('edit-subscription-expires').value;
+    const subscriptionExpires = expiresVal ? new Date(expiresVal).toISOString() : null;
     
     try {
         const token = getSessionToken();
@@ -303,7 +334,14 @@ async function handleUpdateUser(event) {
                 'Authorization': token ? `Bearer ${token}` : '',
             },
             credentials: 'include',
-            body: JSON.stringify({ username, email: email || undefined, role, is_active: isActive }),
+            body: JSON.stringify({
+                username,
+                email: email || undefined,
+                role,
+                is_active: isActive,
+                subscription_plan: subscriptionPlan,
+                subscription_expires_at: subscriptionExpires,
+            }),
         });
         
         const data = await response.json();

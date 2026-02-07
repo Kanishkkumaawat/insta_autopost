@@ -51,5 +51,8 @@ config/accounts.yaml.local
 *.pyc
 data/instagram_added_accounts.db
 
+# Runtime data (optional: uncomment to exclude from git)
+# data/*.json
+
 # Uploads (user-uploaded media files)
 uploads/

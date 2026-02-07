@@ -246,15 +246,55 @@ class BrowserSessionManager:
                     )
                 raise last_err
 
-            # Wait for login form
-            await page.wait_for_selector('input[name="username"]', timeout=10000)
+            # Wait for login form - try multiple selectors (Instagram may change layout)
+            login_form_timeout = 15000
+            username_selectors = [
+                'input[name="username"]',
+                'input[autocomplete="username"]',
+                'input[aria-label*="phone" i], input[aria-label*="username" i], input[aria-label*="Phone" i]',
+                'input[type="text"]',
+            ]
+            username_input = None
+            for sel in username_selectors:
+                try:
+                    username_input = await page.wait_for_selector(sel, timeout=min(5000, login_form_timeout // len(username_selectors)))
+                    if username_input:
+                        break
+                except Exception:
+                    continue
+            if not username_input:
+                raise TimeoutError(
+                    "Login form not found. Instagram may have changed the page or is showing a challenge. "
+                    "Try a residential proxy or run from a home network."
+                )
+            await asyncio.sleep(0.5)
             
             # Fill in credentials
-            await page.fill('input[name="username"]', username)
-            await page.fill('input[name="password"]', password)
+            await username_input.fill(username, timeout=5000)
+            pass_locator = page.locator('input[name="password"], input[type="password"]').first
+            await pass_locator.fill(password, timeout=5000)
+            await asyncio.sleep(0.3)
             
-            # Click login button
-            await page.click('button[type="submit"]')
+            # Click login button - Instagram may use different selectors
+            submit_selectors = [
+                'button[type="submit"]',
+                'button:has-text("Log in")',
+                'button:has-text("Log In")',
+                'div[role="button"]:has-text("Log in")',
+                'form button',
+            ]
+            clicked = False
+            for sel in submit_selectors:
+                try:
+                    btn = page.locator(sel).first
+                    await btn.wait_for(state="visible", timeout=3000)
+                    await btn.click(timeout=5000)
+                    clicked = True
+                    break
+                except Exception:
+                    continue
+            if not clicked:
+                raise TimeoutError("Could not find or click login button. Instagram may have changed the page.")
             
             # Wait for navigation (either to home or error)
             await page.wait_for_load_state(INSTAGRAM_WAIT_UNTIL, timeout=20000)

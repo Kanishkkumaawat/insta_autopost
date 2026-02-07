@@ -6,106 +6,123 @@ Production-grade Instagram automation system with web dashboard, comment automat
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 ![License](https://img.shields.io/badge/License-Proprietary-red)
 
-## 🚀 Key Features
+## Key Features
 
-### 📸 Smart Posting
-- **Multi-Format Support**: Images, Videos, and **Carousels** (2-10 items).
-- **Auto-Validation**: Frontend and backend checks for media requirements.
-- **Retry Logic**: Automatic retries with exponential backoff for reliability.
-- **Scheduling**: Plan posts for future publication (backend ready).
+### Smart Posting
+- **Multi-Format Support**: Images, Videos, and Carousels (2-10 items)
+- **Auto-Validation**: Frontend and backend checks for media requirements
+- **Retry Logic**: Automatic retries with exponential backoff
+- **Scheduling**: Plan posts for future publication
 
-### 💬 Comment-to-DM Automation (New!)
-- **Auto-DM Funnel**: Automatically send a DM when someone comments on your post.
-- **Smart Triggers**: Trigger on **any comment** or specific keywords (e.g., "PDF", "LINK").
-- **File Delivery**: Automatically send PDFs, links, or checkout pages via DM.
-- **Safety First**:
-  - One DM per user per post per day (prevents spam).
-  - Configurable daily limits and cooldowns.
-  - "Last Processed" tracking to avoid duplicates.
+### Comment-to-DM Automation
+- **Auto-DM Funnel**: Automatically send a DM when someone comments on your post
+- **Smart Triggers**: Trigger on any comment or specific keywords
+- **File Delivery**: Send PDFs, links, or checkout pages via DM
+- **Safety**: One DM per user per post per day, configurable limits and cooldowns
 
-### 🛡️ Advanced Safety Layer
-- **Rate Limiting**: Intelligent API quota management (prevents 429 errors).
-- **Quota Protection**: Feature-gating ensures Posting has priority over Monitoring.
-- **Health Monitoring**: Real-time system status checks.
-- **Proxy Support**: Individual proxy routing per account.
+### Multi-User and Role-Based Access
+- **Admin and User roles**: Separate permissions for admin and regular users
+- **Account ownership**: Each user sees only their own accounts; admins manage all
+- **Admin-only pages**: Users, Settings, Webhook Test (admin only)
 
-### 💻 Modern Web Dashboard
-- **Clean UI**: Beautiful, responsive interface for managing your accounts.
-- **Live Logs**: Real-time system logs viewer.
-- **Config Management**: Update settings directly from the UI.
-- **Media Upload**: Direct file upload or URL support.
+### Safety Layer
+- Rate limiting and quota protection
+- Health monitoring and proxy support
+
+### Web Dashboard
+- Tabbed navigation (Content, Automation, Accounts, Tools, Admin)
+- Live logs, config management, media upload
+- Red and black theme
 
 ---
 
-## 🛠️ Quick Start
+## Quick Start
 
 ### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Account
-Edit `config/accounts.yaml` with your Instagram credentials:
-```yaml
-accounts:
-  - account_id: "your_id"
-    access_token: "IGAAT..."  # Your Instagram Graph API Token
-    # Enable features as needed
-    comment_to_dm:
-      enabled: true
-      trigger_keyword: "AUTO"
-```
-> See [`docs/TOKEN_GENERATION_GUIDE.md`](docs/TOKEN_GENERATION_GUIDE.md) for getting your token.
+### 2. Configure Environment
+Copy `.env.example` to `.env` and set required variables (see Deployment section).
 
 ### 3. Start the Server
+
+**Development** (with auto-reload):
 ```bash
 python web_server.py
 ```
 
+**Production** (uvicorn):
+```bash
+python main.py
+```
+Or with multiple workers:
+```bash
+python app.py
+```
+
 ### 4. Access Dashboard
 - **URL**: [http://localhost:8000](http://localhost:8000)
-- **Login**: `admin` / `admin` (Default)
+- **Default login**: `admin` / `admin` (or value of `WEB_PASSWORD` env var)
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
-InstaForge/
-├── config/              # Configuration (YAML)
-│   ├── accounts.yaml    # Account credentials & feature flags
-│   └── settings.yaml    # Global app settings
+insta_autopost/
+├── config/              # Configuration
+│   ├── app_credentials.yaml
+│   └── (accounts.yaml in data/)
+├── data/                # Runtime data (accounts, users, scheduled posts, etc.)
+├── deploy/              # Nginx, Apache configs for VPS
 ├── src/                 # Core Source Code
 │   ├── api/             # Instagram Graph API Client
-│   ├── services/        # Business Logic (Posting, Comments, Accounts)
-│   ├── features/        # Feature Modules (Comment-to-DM, Auto-Reply)
-│   └── safety/          # Rate Limiting & Safety Engines
+│   ├── auth/            # User auth, Meta OAuth
+│   ├── services/        # Business Logic
+│   ├── features/        # Comment-to-DM, AI DM, Warmup
+│   └── safety/          # Rate Limiting, Safety Engines
 ├── web/                 # FastAPI Web Dashboard
 │   ├── templates/       # HTML Frontend
 │   └── static/          # CSS/JS Assets
-├── scripts/             # Utility Scripts
-│   ├── stop_server.ps1  # Force stop server
-│   └── ...              # Token & Testing scripts
-└── docs/                # Comprehensive Documentation
+├── web_server.py        # Dev entry point (Cloudflare tunnel)
+├── main.py              # Production entry point
+├── app.py               # Production with uvicorn workers
+└── requirements.txt
 ```
 
 ---
 
-## 📚 Documentation
+## Deployment
 
-- **[Features Overview](docs/FEATURES.md)** - Detailed capabilities list.
-- **[Setup Guide](docs/SETUP.md)** - Full installation instructions.
-- **[Token Generation](docs/TOKEN_GENERATION_GUIDE.md)** - How to get your `IGAAT` token.
-- **[Comment-to-DM Setup](docs/COMMENT_TO_DM_SETUP.md)** - Configuring the auto-DM funnel.
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Solutions for common errors.
-- **[System Architecture](docs/ARCHITECTURE.md)** - Technical design overview.
+### Environment Variables
+| Variable | Description |
+|----------|-------------|
+| `BASE_URL` | Public URL (e.g. https://yourdomain.com) |
+| `WEB_PASSWORD` | Default admin password on first run |
+| `META_APP_ID` | Meta/Facebook App ID for OAuth |
+| `META_APP_SECRET` | Meta App Secret |
+| `OPENAI_API_KEY` | For AI DM features |
+| `WEBHOOK_VERIFY_TOKEN` | Token for Instagram webhook verification |
+| `RAZORPAY_KEY_ID` | Razorpay key for payments |
+| `RAZORPAY_KEY_SECRET` | Razorpay secret |
+| `RAZORPAY_WEBHOOK_SECRET` | For Razorpay webhook verification |
+| `ENVIRONMENT` | `development` or `production` |
+
+### Render
+Uses `render.yaml` and `Procfile`. Set env vars in Render dashboard.
+
+### VPS (Nginx + Systemd)
+1. Copy `deploy/nginx-veilforce.conf` to `/etc/nginx/sites-available/` and enable
+2. Copy `deploy/instaforge.service` to `/etc/systemd/system/`, edit WorkingDirectory and paths, then `systemctl enable instaforge && systemctl start instaforge`
+3. Use Let's Encrypt for SSL; ensure `data/` and `uploads/` are persistent
 
 ---
 
-## 🔧 Configuration Guide
+## Configuration
 
 ### Posting Mode (Recommended for Start)
-To prioritize posting and avoid rate limits, disable background monitoring in `config/accounts.yaml`:
 ```yaml
 warming:
   enabled: false
@@ -114,18 +131,16 @@ comment_to_dm:
 ```
 
 ### Auto-DM Mode
-To enable the Comment-to-DM funnel:
 ```yaml
 comment_to_dm:
   enabled: true
-  trigger_keyword: "AUTO"  # Or specific word like "SEND"
+  trigger_keyword: "AUTO"
   link_to_send: "https://your-link.com/file.pdf"
 ```
 
 ---
 
-## 🆘 Support
+## Support
 
-- Check logs: `logs/instaforge.log` or via Dashboard > Logs.
-- Run diagnostics: `python scripts/check_token_detailed.py`.
-- Force stop server: `.\scripts\stop_server.ps1`.
+- Check logs via Dashboard > Logs
+- Health check: `GET /api/health`

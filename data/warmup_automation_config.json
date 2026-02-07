@@ -1,10 +1,21 @@
 {
   "accounts": {
     "17841444586383008": {
-      "automation_enabled": false,
+      "automation_enabled": true,
       "target_hashtags": [
         "explore",
         "instagram"
+      ],
+      "schedule_times": [
+        "09:00",
+        "14:00",
+        "18:00"
+      ]
+    },
+    "17841480102452551": {
+      "automation_enabled": true,
+      "target_hashtags": [
+        "#cars"
       ],
       "schedule_times": [
         "09:00",

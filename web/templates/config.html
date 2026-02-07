@@ -46,6 +46,32 @@
     </div>
 </div>
 
+<!-- Global Proxy for Warm-Up -->
+<div class="card mt-4">
+    <div class="flex justify-between items-center mb-4">
+        <h2>Global Proxy (Warm-Up Browser)</h2>
+        <button class="btn btn-primary" onclick="saveGlobalProxy()">Save Proxy</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label flex items-center gap-2">
+            <input type="checkbox" id="global-proxy-enabled"> Use global proxy for all warm-up automation
+        </label>
+        <div class="text-sm text-muted">When enabled, all warm-up browser sessions use this proxy (overrides per-account proxy).</div>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Protocol</label>
+        <select id="global-proxy-protocol" class="form-control">
+            <option value="socks5">SOCKS5 (recommended for residential proxies)</option>
+            <option value="http">HTTP</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Proxy (host:port:username:password)</label>
+        <input type="text" id="global-proxy" class="form-control" placeholder="134.195.153.48:9392:user:pass" autocomplete="off">
+        <div class="text-sm text-muted">Format: host:port:username:password</div>
+    </div>
+</div>
+
 <!-- Comment Automation Settings -->
 <div class="card mt-4">
     <div class="flex justify-between items-center mb-4">
@@ -97,6 +123,15 @@
                 <label class="form-label">Instagram password (for warmup)</label>
                 <input type="password" id="acc-password" class="form-control" autocomplete="off" placeholder="Required for 5-day warm-up browser automation">
                 <div class="text-sm text-muted">Used to log in via browser for warm-up (like/comment/save). Leave blank when editing to keep current.</div>
+            </div>
+
+            <!-- Proxy for warm-up browser -->
+            <div class="form-group">
+                <label class="form-label flex items-center gap-2">
+                    <input type="checkbox" id="acc-proxy-enabled"> Use proxy for warm-up browser
+                </label>
+                <input type="text" id="acc-proxy" class="form-control mt-2" placeholder="134.195.153.48:9392:user:pass" autocomplete="off">
+                <div class="text-sm text-muted">Used for warm-up automation. Format: host:port:username:password</div>
             </div>
             
             <!-- Warming Config -->

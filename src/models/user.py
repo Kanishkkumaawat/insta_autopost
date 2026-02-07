@@ -15,6 +15,8 @@ class User(BaseModel):
     created_at: str  # ISO format timestamp
     is_active: bool = True
     created_by: Optional[str] = None  # User ID of admin who created this user (None for self-registered or default admin)
-    
+    subscription_plan: str = "free"  # free, starter, pro
+    subscription_expires_at: Optional[str] = None  # ISO format or None for lifetime
+
     class Config:
         frozen = True  # Immutable for thread safety

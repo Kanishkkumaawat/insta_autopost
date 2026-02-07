@@ -5,55 +5,80 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InstaForge | {% block title %}Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
 </head>
 <body>
     <div class="app-layout">
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h2>🚀 InstaForge</h2>
+                <a href="/" id="logo-link" class="logo">InstaForge</a>
             </div>
             <nav class="sidebar-nav">
-                <a href="/" class="nav-item {% if request.url.path == '/' %}active{% endif %}">
-                    <span class="icon">📝</span> Posting
-                </a>
-                <a href="/schedule" class="nav-item {% if request.url.path == '/schedule' %}active{% endif %}">
-                    <span class="icon">📅</span> Schedule
-                </a>
-                <a href="/posts" class="nav-item {% if request.url.path == '/posts' %}active{% endif %}">
-                    <span class="icon">📚</span> History
-                </a>
-                <a href="/logs" class="nav-item {% if request.url.path == '/logs' %}active{% endif %}">
-                    <span class="icon">📊</span> Logs
-                </a>
-                <a href="/ai-settings" class="nav-item {% if request.url.path == '/ai-settings' %}active{% endif %}">
-                    <span class="icon">🤖</span> AI Customization
-                </a>
-                <a href="/inbox" class="nav-item {% if request.url.path == '/inbox' %}active{% endif %}">
-                    <span class="icon">✉️</span> DM Inbox
-                </a>
-                <a href="/accounts" class="nav-item {% if request.url.path == '/accounts' %}active{% endif %}">
-                    <span class="icon">👥</span> Account Status
-                </a>
-                <a href="/schedule" class="nav-item {% if request.url.path == '/schedule' %}active{% endif %}">
-                    <span class="icon">📅</span> Schedule Queue
-                </a>
-                <a href="/warmup" class="nav-item {% if request.url.path == '/warmup' %}active{% endif %}">
-                    <span class="icon">🔥</span> 5-Day Warm-Up
-                </a>
-                <a href="/webhook-test" class="nav-item {% if request.url.path == '/webhook-test' %}active{% endif %}">
-                    <span class="icon">🔗</span> Webhook Test
-                </a>
-                <a href="/users" id="users-nav-item" class="nav-item {% if request.url.path == '/users' %}active{% endif %}" style="display: none;">
-                    <span class="icon">👤</span> Users
-                </a>
-                <a href="/config" id="settings-nav-item" class="nav-item {% if request.url.path == '/config' %}active{% endif %}" style="display: none;">
-                    <span class="icon">⚙️</span> Settings
-                </a>
+                <!-- User navigation (shown only to users) -->
+                <div id="user-nav" class="nav-section">
+                    <div class="nav-group">
+                        <span class="nav-group-label">Content</span>
+                        <a href="/" class="nav-item {% if request.url.path == '/' %}active{% endif %}">
+                            <span class="nav-icon">📝</span> Posting
+                        </a>
+                        <a href="/schedule" class="nav-item {% if request.url.path == '/schedule' %}active{% endif %}">
+                            <span class="nav-icon">📅</span> Schedule
+                        </a>
+                        <a href="/posts" class="nav-item {% if request.url.path == '/posts' %}active{% endif %}">
+                            <span class="nav-icon">📚</span> History
+                        </a>
+                    </div>
+                    <div class="nav-group">
+                        <span class="nav-group-label">Automation</span>
+                        <a href="/ai-settings" class="nav-item {% if request.url.path == '/ai-settings' %}active{% endif %}">
+                            <span class="nav-icon">🤖</span> AI Customization
+                        </a>
+                        <a href="/inbox" class="nav-item {% if request.url.path == '/inbox' %}active{% endif %}">
+                            <span class="nav-icon">✉️</span> DM Inbox
+                        </a>
+                        <a href="/warmup" class="nav-item {% if request.url.path == '/warmup' %}active{% endif %}">
+                            <span class="nav-icon">🔥</span> Warm-Up
+                        </a>
+                    </div>
+                    <div class="nav-group">
+                        <span class="nav-group-label">Account</span>
+                        <a href="/accounts" class="nav-item {% if request.url.path == '/accounts' %}active{% endif %}">
+                            <span class="nav-icon">👤</span> My Accounts
+                        </a>
+                    </div>
+                    <div class="nav-group">
+                        <span class="nav-group-label">Tools</span>
+                        <a href="/logs" class="nav-item {% if request.url.path == '/logs' %}active{% endif %}">
+                            <span class="nav-icon">📊</span> Logs
+                        </a>
+                        <a href="/pricing" class="nav-item {% if request.url.path == '/pricing' %}active{% endif %}">
+                            <span class="nav-icon">💳</span> Pricing
+                        </a>
+                    </div>
+                </div>
+                <!-- Admin navigation (shown only to admins) -->
+                <div id="admin-nav" class="nav-section" style="display: none;">
+                    <div class="nav-group">
+                        <span class="nav-group-label">Admin</span>
+                        <a href="/users" class="nav-item {% if request.url.path == '/users' %}active{% endif %}">
+                            <span class="nav-icon">👥</span> Users
+                        </a>
+                        <a href="/config" class="nav-item {% if request.url.path == '/config' %}active{% endif %}">
+                            <span class="nav-icon">⚙️</span> Settings
+                        </a>
+                        <a href="/webhook-test" class="nav-item {% if request.url.path == '/webhook-test' %}active{% endif %}">
+                            <span class="nav-icon">🔗</span> Webhook Test
+                        </a>
+                    </div>
+                </div>
             </nav>
             <div class="sidebar-footer">
                 <div id="status-indicator" class="status-indicator">
-                    <span class="status-dot"></span> <span id="system-status">Checking...</span>
+                    <span class="status-dot"></span>
+                    <span id="system-status">Checking...</span>
                 </div>
             </div>
         </aside>
@@ -61,16 +86,14 @@
         <main class="main-content">
             <header class="top-bar">
                 <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
-                <div class="top-bar-actions" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-                    <div id="user-info" style="display: none; align-items: center; gap: 0.75rem;">
-                        <div style="display: flex; flex-direction: column; align-items: flex-end;">
-                            <span id="user-name" style="font-weight: 600; color: var(--text-main); font-size: 0.9375rem;"></span>
-                            <span id="user-role" class="badge badge-info" style="font-size: 0.6875rem; margin-top: 0.25rem;"></span>
+                <div class="top-bar-actions">
+                    <div id="user-info" class="user-info" style="display: none;">
+                        <div class="user-details">
+                            <span id="user-name" class="user-name"></span>
+                            <span id="user-role" class="badge badge-admin"></span>
                         </div>
                     </div>
-                    <button id="logout-btn" class="btn btn-secondary" onclick="handleLogout()" style="display: none;">
-                        <span>🚪</span> Logout
-                    </button>
+                    <button id="logout-btn" class="btn btn-ghost btn-logout" onclick="handleLogout()" style="display: none;">Logout</button>
                     {% block actions %}{% endblock %}
                 </div>
             </header>
@@ -81,40 +104,40 @@
         </main>
     </div>
     
+    <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle menu" style="display: none;">
+        <span></span><span></span><span></span>
+    </button>
+    
     <script src="/static/js/app.js"></script>
     <script src="/static/js/auth.js"></script>
     <script>
-        // Load user info and show/hide navigation items
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const user = await getCurrentUser();
                 if (user) {
-                    // Show user info
                     document.getElementById('user-info').style.display = 'flex';
                     document.getElementById('user-name').textContent = user.username;
-                    document.getElementById('user-role').textContent = user.role === 'admin' ? 'Admin' : 'User';
-                    
-                    // Show logout button
-                    document.getElementById('logout-btn').style.display = 'block';
-                    
-                    // Show admin-only nav items
+                    const roleEl = document.getElementById('user-role');
+                    roleEl.textContent = user.role === 'admin' ? 'Admin' : 'User';
+                    roleEl.className = 'badge badge-' + (user.role === 'admin' ? 'admin' : 'user');
+                    document.getElementById('logout-btn').style.display = 'inline-flex';
                     if (user.role === 'admin') {
-                        document.getElementById('users-nav-item').style.display = 'block';
-                        document.getElementById('settings-nav-item').style.display = 'block';
+                        document.getElementById('user-nav').style.display = 'none';
+                        document.getElementById('admin-nav').style.display = 'block';
+                        document.getElementById('logo-link').href = '/users';
+                    } else {
+                        document.getElementById('user-nav').style.display = 'block';
+                        document.getElementById('admin-nav').style.display = 'none';
                     }
-                } else {
-                    // Not logged in, redirect handled by middleware
                 }
-            } catch (error) {
-                console.error('Error loading user info:', error);
-            }
+            } catch (e) { console.error('Auth:', e); }
         });
-        
         async function handleLogout() {
-            if (confirm('Are you sure you want to logout?')) {
-                await logout();
-            }
+            if (confirm('Log out?')) await logout();
         }
+        document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+            document.getElementById('sidebar').classList.toggle('open');
+        });
     </script>
     {% block scripts %}{% endblock %}
 </body>

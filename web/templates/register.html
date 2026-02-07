@@ -5,180 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register | InstaForge</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        .auth-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #0A0A0A 0%, #1A0000 50%, #0A0A0A 100%);
-            padding: 2rem;
-        }
-        .auth-card {
-            background: var(--bg-card);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-lg), 0 0 30px rgba(220, 38, 38, 0.3);
-            padding: 3rem;
-            width: 100%;
-            max-width: 420px;
-            animation: slideUp 0.4s ease;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .auth-title {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            text-align: center;
-            background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            text-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
-        }
-        .auth-subtitle {
-            text-align: center;
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            font-size: 0.9375rem;
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
-        }
-        .info-message {
-            background: var(--info-light);
-            color: #93C5FD;
-            padding: 1rem;
-            border-radius: var(--radius-sm);
-            margin-bottom: 1.5rem;
-            font-size: 0.875rem;
-            border-left: 4px solid var(--info);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-        }
-        .error-message, .success-message {
-            padding: 1rem;
-            border-radius: var(--radius-sm);
-            margin-bottom: 1.5rem;
-            display: none;
-            animation: slideDown 0.3s ease;
-        }
-        .error-message {
-            background: var(--error-light);
-            color: #FCA5A5;
-            border-left: 4px solid var(--error);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
-        .success-message {
-            background: var(--success-light);
-            color: #6EE7B7;
-            border-left: 4px solid var(--success);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-        .btn-block {
-            width: 100%;
-            padding: 0.875rem;
-            margin-top: 0.5rem;
-        }
-        .auth-link {
-            text-align: center;
-            margin-top: 2rem;
-            color: var(--text-muted);
-            font-size: 0.9375rem;
-        }
-        .auth-link a {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 600;
-            transition: all 0.2s ease;
-            text-shadow: 0 0 8px rgba(220, 38, 38, 0.5);
-        }
-        .auth-link a:hover {
-            color: var(--primary-light);
-            text-decoration: underline;
-            text-shadow: 0 0 12px rgba(220, 38, 38, 0.8);
-        }
-        .password-requirements {
-            font-size: 0.8125rem;
-            color: var(--text-muted);
-            margin-top: 0.5rem;
-        }
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="auth-container">
+    <div class="auth-page">
         <div class="auth-card">
-            <h1 class="auth-title">InstaForge</h1>
-            <p class="auth-subtitle">Create a new account</p>
+            <h1>InstaForge</h1>
+            <p class="auth-subtitle">Create your account</p>
             
-            <div class="info-message">
-                Create your account and start using InstaForge immediately. No approval needed!
-            </div>
-            
-            <div id="error-message" class="error-message"></div>
-            <div id="success-message" class="success-message"></div>
+            <div class="auth-message info">Create an account and start using InstaForge immediately.</div>
+            <div id="error-message" class="auth-message error" style="display: none;"></div>
+            <div id="success-message" class="auth-message success" style="display: none;"></div>
             
             <form id="register-form" onsubmit="handleRegister(event)">
                 <div class="form-group">
                     <label class="form-label" for="username">Username</label>
-                    <input 
-                        type="text" 
-                        id="username" 
-                        class="form-control" 
-                        required 
-                        autocomplete="username"
-                        autofocus
-                    >
+                    <input type="text" id="username" class="form-control" required autocomplete="username" autofocus>
                 </div>
-                
                 <div class="form-group">
                     <label class="form-label" for="email">Email (optional)</label>
-                    <input 
-                        type="email" 
-                        id="email" 
-                        class="form-control" 
-                        autocomplete="email"
-                    >
+                    <input type="email" id="email" class="form-control" autocomplete="email">
                 </div>
-                
                 <div class="form-group">
                     <label class="form-label" for="password">Password</label>
-                    <input 
-                        type="password" 
-                        id="password" 
-                        class="form-control" 
-                        required 
-                        autocomplete="new-password"
-                        minlength="8"
-                    >
-                    <div class="password-requirements">Must be at least 8 characters</div>
+                    <input type="password" id="password" class="form-control" required autocomplete="new-password" minlength="8">
+                    <div class="text-muted text-sm" style="margin-top: 0.375rem;">Min 8 characters</div>
                 </div>
-                
                 <div class="form-group">
-                    <label class="form-label" for="confirm-password">Confirm Password</label>
-                    <input 
-                        type="password" 
-                        id="confirm-password" 
-                        class="form-control" 
-                        required 
-                        autocomplete="new-password"
-                        minlength="8"
-                    >
+                    <label class="form-label" for="confirm-password">Confirm password</label>
+                    <input type="password" id="confirm-password" class="form-control" required autocomplete="new-password">
                 </div>
-                
-                <button type="submit" class="btn btn-primary btn-block" id="register-btn">
-                    Register
-                </button>
+                <button type="submit" class="btn btn-primary btn-block" id="register-btn">Register</button>
             </form>
             
             <div class="auth-link">
-                Already have an account? <a href="/login">Login here</a>
+                Already have an account? <a href="/login">Sign in</a>
             </div>
         </div>
     </div>
@@ -187,82 +48,46 @@
     <script>
         async function handleRegister(event) {
             event.preventDefault();
-            
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
-            const confirmPassword = document.getElementById('confirm-password').value;
+            const confirm = document.getElementById('confirm-password').value;
             const errorEl = document.getElementById('error-message');
             const successEl = document.getElementById('success-message');
-            const registerBtn = document.getElementById('register-btn');
-            
-            // Hide previous messages
+            const btn = document.getElementById('register-btn');
             errorEl.style.display = 'none';
             successEl.style.display = 'none';
-            
-            // Validate passwords match
-            if (password !== confirmPassword) {
+            if (password !== confirm) {
                 errorEl.textContent = 'Passwords do not match';
                 errorEl.style.display = 'block';
                 return;
             }
-            
-            // Validate password length
-            if (password.length < 8) {
-                errorEl.textContent = 'Password must be at least 8 characters';
-                errorEl.style.display = 'block';
-                return;
-            }
-            
-            // Disable button
-            registerBtn.disabled = true;
-            registerBtn.textContent = 'Registering...';
-            
+            btn.disabled = true;
+            btn.textContent = 'Registering...';
             try {
-                const result = await register({
-                    username,
-                    email: email || undefined,
-                    password,
-                });
-                
+                const result = await register({ username, email: email || undefined, password });
                 if (result.status === 'success') {
-                    successEl.textContent = result.message || 'Registration successful! Redirecting to login...';
+                    successEl.textContent = result.message || 'Account created. Redirecting...';
                     successEl.style.display = 'block';
-                    
-                    // Auto-login after successful registration
                     if (result.token) {
                         localStorage.setItem('session_token', result.token);
-                        // Redirect to home page
-                        setTimeout(() => {
-                            window.location.href = '/';
-                        }, 1000);
+                        setTimeout(() => { window.location.href = '/'; }, 800);
                     } else {
-                        // Redirect to login after 1 second
-                        setTimeout(() => {
-                            window.location.href = '/login';
-                        }, 1000);
+                        setTimeout(() => { window.location.href = '/login'; }, 800);
                     }
-                } else {
-                    throw new Error(result.message || 'Registration failed');
-                }
+                } else throw new Error(result.message || 'Registration failed');
             } catch (error) {
-                errorEl.textContent = error.message || 'Registration failed. Please try again.';
+                errorEl.textContent = error.message || 'Registration failed. Try again.';
                 errorEl.style.display = 'block';
-                registerBtn.disabled = false;
-                registerBtn.textContent = 'Register';
+                btn.disabled = false;
+                btn.textContent = 'Register';
             }
         }
-        
-        // Check if already logged in
-        window.addEventListener('DOMContentLoaded', async () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const user = await getCurrentUser();
-                if (user) {
-                    window.location.href = '/';
-                }
-            } catch (error) {
-                // Not logged in, stay on register page
-            }
+                if (user) window.location.href = '/';
+            } catch (_) {}
         });
     </script>
 </body>

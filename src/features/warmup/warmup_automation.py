@@ -59,7 +59,15 @@ class WarmupAutomation:
         username = account.username or ""
         password = getattr(account, "password", None) or ""
         proxy_url = None
-        if account.proxy and account.proxy.enabled:
+        try:
+            from ...utils.config import config_manager
+            settings = config_manager.load_settings()
+            dproxy = getattr(settings.proxies, "default_proxy", None) if settings.proxies else None
+            if dproxy and dproxy.enabled and dproxy.host and dproxy.port:
+                proxy_url = dproxy.proxy_url()
+        except Exception:
+            pass
+        if not proxy_url and account.proxy and account.proxy.enabled:
             proxy_url = account.proxy.proxy_url
         day = plan.get("current_day", 1)
         tasks = WARMUP_DAY_PLANS.get(day, [])
@@ -77,16 +85,28 @@ class WarmupAutomation:
             )
         except Exception as e:
             err_str = str(e)
-            logger.warning("Warmup discovery failed", account_id=account_id, error=err_str)
-            if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "blocking browser" in err_str.lower() or "403" in err_str:
-                result["message"] = (
-                    "Instagram is blocking browser access from this server (often due to datacenter IP). "
-                    "Use a residential proxy: Config → Accounts → Edit account → Proxy. "
-                    "Or run the app from a home network."
-                )
-            else:
-                result["message"] = f"Discovery failed: {e}. Check login and hashtags."
-            return result
+            # If proxy caused tunnel error, retry without proxy (works on home network)
+            if proxy_url and "ERR_TUNNEL_CONNECTION_FAILED" in err_str:
+                logger.info("Proxy failed, retrying without proxy", account_id=account_id)
+                try:
+                    self.browser_wrapper.close_account(account_id)
+                    post_urls = self.browser_wrapper.discover_post_urls_sync(
+                        account_id, hashtags, limit_per_hashtag=5,
+                        username=username, password=password, proxy_url=None,
+                    )
+                    proxy_url = None  # Use no proxy for subsequent actions
+                except Exception as e2:
+                    err_str = str(e2)
+            if not post_urls:
+                logger.warning("Warmup discovery failed", account_id=account_id, error=err_str)
+                if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_str or "blocking browser" in err_str.lower() or "403" in err_str:
+                    result["message"] = (
+                        "Instagram is blocking browser access from this server (often due to datacenter IP). "
+                        "Use a residential proxy in Settings, or run from a home network."
+                    )
+                else:
+                    result["message"] = f"Discovery failed: {err_str[:200]}. Check login and hashtags."
+                return result
         if not post_urls:
             result["message"] = (
                 "No posts found (we tried Reels, then Explore, then hashtags). "

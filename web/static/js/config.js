@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
     loadSettings();
     loadCommentSettings();
+    loadGlobalProxy();
 });
 
 // Accounts
@@ -56,8 +57,82 @@ async function loadSettings() {
         if (settings.instagram && settings.instagram.posting) {
             document.getElementById('post-retries').value = settings.instagram.posting.max_retries || 3;
         }
+        loadGlobalProxyFromSettings(settings);
     } catch (error) {
         console.error('Failed to load settings:', error);
+    }
+}
+
+async function loadGlobalProxy() {
+    try {
+        const response = await fetch('/api/config/settings');
+        const settings = await response.json();
+        loadGlobalProxyFromSettings(settings);
+    } catch (error) {
+        console.error('Failed to load global proxy:', error);
+    }
+}
+
+function loadGlobalProxyFromSettings(settings) {
+    const dp = settings.proxies?.default_proxy;
+    const enabledEl = document.getElementById('global-proxy-enabled');
+    const protocolEl = document.getElementById('global-proxy-protocol');
+    const proxyEl = document.getElementById('global-proxy');
+    if (enabledEl) enabledEl.checked = dp?.enabled || false;
+    if (protocolEl) protocolEl.value = dp?.protocol || 'socks5';
+    if (proxyEl && dp?.host && dp?.port) {
+        proxyEl.value = dp.username && dp.password
+            ? `${dp.host}:${dp.port}:${dp.username}:${dp.password}`
+            : `${dp.host}:${dp.port}`;
+    } else if (proxyEl) proxyEl.value = '';
+}
+
+async function saveGlobalProxy() {
+    try {
+        const currentSettingsRes = await fetch('/api/config/settings');
+        const currentSettings = await currentSettingsRes.json();
+        const enabled = document.getElementById('global-proxy-enabled')?.checked || false;
+        const protocol = document.getElementById('global-proxy-protocol')?.value || 'socks5';
+        const proxyStr = (document.getElementById('global-proxy')?.value || '').trim();
+        if (!currentSettings.proxies) currentSettings.proxies = {};
+        if (!currentSettings.proxies.default_proxy) currentSettings.proxies.default_proxy = {};
+        if (enabled && proxyStr) {
+            const parts = proxyStr.split(':');
+            if (parts.length >= 4) {
+                currentSettings.proxies.default_proxy = {
+                    enabled: true,
+                    host: parts[0],
+                    port: parseInt(parts[1], 10) || 80,
+                    username: parts[2],
+                    password: parts.slice(3).join(':'),
+                    protocol: protocol,
+                };
+            } else {
+                alert('Proxy format must be host:port:username:password');
+                return;
+            }
+        } else {
+            currentSettings.proxies.default_proxy = {
+                enabled: enabled,
+                host: null,
+                port: null,
+                username: null,
+                password: null,
+                protocol: protocol,
+            };
+        }
+        const response = await fetch('/api/config/settings', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(currentSettings)
+        });
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.detail || 'Failed to save proxy');
+        }
+        alert('Global proxy saved!');
+    } catch (error) {
+        alert('Error saving proxy: ' + error.message);
     }
 }
 
@@ -165,6 +240,10 @@ function showAddAccountModal() {
     document.getElementById('acc-id').disabled = false;
     const dmEl = document.getElementById('acc-dm-enabled');
     if (dmEl) dmEl.checked = true;  // Default Auto-DM on for new accounts
+    const proxyCheck = document.getElementById('acc-proxy-enabled');
+    if (proxyCheck) proxyCheck.checked = false;
+    const proxyInp = document.getElementById('acc-proxy');
+    if (proxyInp) proxyInp.value = '';
 }
 
 function closeAccountModal() {
@@ -206,8 +285,6 @@ async function saveAccount() {
         accountData = {
             ...window.currentEditingAccount,
             ...accountData,
-            // Ensure nested objects are merged carefully if needed, but top-level replacement is mostly what we do here.
-            // Exception: comment_to_dm might be in currentEditingAccount but not in the form.
             comment_to_dm: window.currentEditingAccount.comment_to_dm || { enabled: false },
             warming: {
                 ...window.currentEditingAccount.warming,
@@ -232,6 +309,27 @@ async function saveAccount() {
         if (!accountData.ai_dm) accountData.ai_dm = {};
         accountData.ai_dm.enabled = aiDmEnabled.checked;
         if (accountData.ai_dm.auto_send === undefined) accountData.ai_dm.auto_send = true;
+    }
+
+    // Proxy: parse host:port:username:password
+    const proxyEnabled = document.getElementById('acc-proxy-enabled')?.checked || false;
+    const proxyStr = (document.getElementById('acc-proxy')?.value || '').trim();
+    if (proxyEnabled && proxyStr) {
+        const parts = proxyStr.split(':');
+        if (parts.length >= 4) {
+            accountData.proxy = {
+                enabled: true,
+                host: parts[0],
+                port: parseInt(parts[1], 10) || 80,
+                username: parts[2],
+                password: parts.slice(3).join(':')
+            };
+        } else {
+            alert('Proxy format must be host:port:username:password (at least 4 parts)');
+            return;
+        }
+    } else {
+        accountData.proxy = { enabled: false, host: null, port: null, username: null, password: null };
     }
     
     try {
@@ -281,6 +379,20 @@ async function editAccount(accountId) {
             passwordInput.placeholder = 'Leave blank to keep current password';
         }
         document.getElementById('acc-warming').checked = account.warming?.enabled || false;
+
+        const proxyCheckbox = document.getElementById('acc-proxy-enabled');
+        const proxyInput = document.getElementById('acc-proxy');
+        if (proxyCheckbox) proxyCheckbox.checked = account.proxy?.enabled || false;
+        if (proxyInput) {
+            const p = account.proxy;
+            if (p && p.enabled && p.host && p.port) {
+                proxyInput.value = p.username && p.password
+                    ? `${p.host}:${p.port}:${p.username}:${p.password}`
+                    : `${p.host}:${p.port}`;
+            } else {
+                proxyInput.value = '';
+            }
+        }
         
         const dmCheckbox = document.getElementById('acc-dm-enabled');
         if (dmCheckbox) dmCheckbox.checked = account.comment_to_dm?.enabled || false;
